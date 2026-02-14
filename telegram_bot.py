@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот - ВИПРАВЛЕНИЙ"""
+"""Telegram бот - автоочищення старих днів"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -41,6 +41,39 @@ class PowerScheduleBot:
         }
         
         self.init_stats()
+        self.cleanup_old_days()  # Видаляє старі дні
+    
+    def cleanup_old_days(self):
+        """Автоматично видаляє дні старше вчорашнього дня"""
+        now = self.get_kyiv_time()
+        yesterday = (now - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Видаляємо зі schedules
+        to_remove = []
+        for date_str in self.schedules.keys():
+            if date_str < yesterday:
+                to_remove.append(date_str)
+        
+        for date_str in to_remove:
+            del self.schedules[date_str]
+            logger.info(f"Видалено старий графік: {date_str}")
+        
+        # Видаляємо зі статистики
+        stats = self.load_stats()
+        updated = False
+        
+        to_remove_stats = []
+        for date_str in stats.keys():
+            if date_str < yesterday:
+                to_remove_stats.append(date_str)
+        
+        for date_str in to_remove_stats:
+            del stats[date_str]
+            updated = True
+            logger.info(f"Видалено стару статистику: {date_str}")
+        
+        if updated:
+            self.save_stats(stats)
     
     def init_stats(self):
         if not os.path.exists(self.stats_file):
@@ -131,14 +164,11 @@ class PowerScheduleBot:
         return periods[0]
     
     def get_full_schedule(self):
-        """ПОКАЗУЄ ГРАФІК НА СЬОГОДНІ І ЗАВТРА"""
         now = self.get_kyiv_time()
         today_str = now.strftime('%Y-%m-%d')
         
-        # Графік на СЬОГОДНІ
         schedule_today = self.get_schedule_for_date(today_str)
         
-        # Графік на ЗАВТРА
         tomorrow = now + timedelta(days=1)
         tomorrow_str = tomorrow.strftime('%Y-%m-%d')
         schedule_tomorrow = self.get_schedule_for_date(tomorrow_str)
@@ -156,7 +186,6 @@ class PowerScheduleBot:
             }
         }
         
-        # Сьогоднішній графік
         if schedule_today:
             for i, (h, m, status) in enumerate(schedule_today):
                 if i + 1 < len(schedule_today):
@@ -172,7 +201,6 @@ class PowerScheduleBot:
                     'has_power': status
                 })
         
-        # Завтрашній графік
         if schedule_tomorrow:
             for i, (h, m, status) in enumerate(schedule_tomorrow):
                 if i + 1 < len(schedule_tomorrow):
@@ -213,7 +241,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Генерує графік з ЧІТКИМИ лініями"""
+        """Графік з годинними мітками і легендою нижче"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -224,7 +252,8 @@ class PowerScheduleBot:
         num_days = len(sorted_dates)
         
         fig_width = 16
-        fig_height = 5 + num_days * 1.1
+        # БІЛЬШЕ місця для легенди внизу
+        fig_height = 6 + num_days * 1.1
         
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
         ax.set_facecolor('white')
@@ -269,7 +298,6 @@ class PowerScheduleBot:
                     else:
                         color = '#7BC043' if has_power else '#FF6B6B'
                     
-                    # ТОВЩІ БІЛІ ЛІНІЇ між блоками
                     rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
                                     facecolor=color, edgecolor='white', linewidth=2.0)
                     ax.add_patch(rect)
@@ -300,22 +328,29 @@ class PowerScheduleBot:
         
         # Осі
         ax.set_xlim(-1.8, 28)
-        ax.set_ylim(-2.2, num_days + 0.1)
+        # БІЛЬШЕ місця внизу для легенди
+        ax.set_ylim(-3.0, num_days + 0.1)
         
-        ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
-        ax.set_xticklabels(['0', '4', '8', '12', '16', '20', '24'], 
-                          fontsize=12, color='#888888', weight='bold')
+        # КОЖНА ГОДИНА (0, 1, 2, 3, ..., 24)
+        ax.set_xticks(range(0, 25))
+        ax.set_xticklabels([str(i) for i in range(0, 25)], 
+                          fontsize=10, color='#888888', weight='bold')
         ax.set_yticks([])
         
-        # ТОВЩІ вертикальні лінії
+        # Вертикальні лінії кожні 4 години (товщі)
         for x in [0, 4, 8, 12, 16, 20, 24]:
-            ax.axvline(x, color='#CCCCCC', linewidth=1.5, alpha=0.8, zorder=0)
+            ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8, zorder=0)
+        
+        # Тонкі лінії кожну годину
+        for x in range(1, 24):
+            if x not in [4, 8, 12, 16, 20]:
+                ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5, zorder=0)
         
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # Легенда
-        legend_y = -1.2
+        # ====== ЛЕГЕНДА НИЖЧЕ (щоб не перекривала цифри) ======
+        legend_y = -1.8
         
         rect_green = Rectangle((1, legend_y), 0.8, 0.35, 
                                facecolor='#7BC043', edgecolor='none')
@@ -329,7 +364,7 @@ class PowerScheduleBot:
         ax.text(9.0, legend_y + 0.175, 'Світла не було',
                va='center', ha='left', fontsize=11, color='#666666')
         
-        # Статистика
+        # Статистика ще нижче
         days_with_data = [d for d in stats.values() if d['hours_with_power'] > 0 or d['hours_without_power'] > 0]
         
         if len(days_with_data) > 1:
@@ -364,14 +399,13 @@ class PowerScheduleBot:
         
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
-                   facecolor='white', pad_inches=0.4)
+                   facecolor='white', pad_inches=0.5)
         buf.seek(0)
         plt.close('all')
         
         return buf
     
     def format_schedule_message(self, data):
-        """ПОКАЗУЄ ГРАФІК НА СЬОГОДНІ І ЗАВТРА"""
         now = self.get_kyiv_time()
         
         msg = f"⚡️ <b>Графік відключень - Група 3.1</b>\n"
@@ -390,7 +424,6 @@ class PowerScheduleBot:
         
         msg += "─" * 35 + "\n\n"
         
-        # СЬОГОДНІ
         today_periods = data['today']['periods']
         if today_periods:
             msg += "<b>📅 Повний графік:</b>\n\n"
@@ -415,7 +448,6 @@ class PowerScheduleBot:
                 else:
                     msg += f"      {start}-{end}  {emoji} {status_text}\n"
             
-            # Статистика сьогодні
             total_with = sum((int(p['end'].split(':')[0]) * 60 + int(p['end'].split(':')[1]) if p['end'] != "00:00" else 1440) - 
                            (int(p['start'].split(':')[0]) * 60 + int(p['start'].split(':')[1])) 
                            for p in today_periods if p['has_power'])
@@ -425,7 +457,6 @@ class PowerScheduleBot:
             msg += f"🟢 Зі світлом: {total_with/60:.1f} год\n"
             msg += f"🔴 Без світла: {total_without/60:.1f} год\n"
         
-        # ЗАВТРА
         tomorrow_periods = data['tomorrow']['periods']
         if tomorrow_periods:
             tomorrow_date = datetime.strptime(data['tomorrow']['date'], '%Y-%m-%d')
