@@ -166,11 +166,11 @@ class PowerScheduleBot:
             
             # Малюємо бари
             # Зелений - світло
-            ax.barh(y_pos, hours_with, left=0, height=0.2, 
+            ax.barh(y_pos, hours_with, left=0, height=0.02, 
                    color='#4CAF50', label='Світло' if y_pos == 0 else '')
             
             # Червоний - відключення
-            ax.barh(y_pos, hours_without, left=hours_with, height=0.2,
+            ax.barh(y_pos, hours_without, left=hours_with, height=0.02,
                    color='#F44336', label='Відключення' if y_pos == 0 else '')
             
             # Текст з датою
