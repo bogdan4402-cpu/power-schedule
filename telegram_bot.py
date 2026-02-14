@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з красивою статистикою"""
+"""Telegram бот з генерацією картинки статистики"""
 
 import logging
 from datetime import datetime, timezone, timedelta
 import json
 import os
+import io
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -121,43 +126,35 @@ class PowerScheduleBot:
         
         return schedule_data
     
-    def format_weekly_stats(self):
-        """КРАСИВА статистика"""
+    def generate_stats_image(self):
+        """Генерує красиву картинку зі статистикою"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
         if not stats:
-            return "📊 Статистики поки немає."
+            return None
+        
+        # Створюємо фігуру
+        fig, ax = plt.subplots(figsize=(12, 8))
+        fig.patch.set_facecolor('#F5F5F5')
+        ax.set_facecolor('#FFFFFF')
         
         # Заголовок
-        msg = "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
-        msg += "┃  📊 <b>СТАТИСТИКА</b>        ┃\n"
-        msg += "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
+        date_range = f"{now.strftime('%d.%m.%Y')}"
+        plt.title(f'📊 Статистика відключень світла\nГрупа 3.1 | {date_range}', 
+                 fontsize=18, fontweight='bold', pad=20)
         
-        msg += f"📍 Група: <b>3.1</b>\n"
-        msg += f"📅 {now.strftime('%d.%m.%Y')}\n"
-        msg += f"🕐 {now.strftime('%H:%M')}\n\n"
-        
-        # Дні
+        # Дані
         sorted_dates = sorted(stats.keys(), reverse=True)
         
-        total_with_power = 0
-        total_without_power = 0
-        days_count = 0
-        
-        msg += "╔═══════════════════════╗\n"
-        msg += "║   <b>ДАНІ ПО ДНЯХ</b>        ║\n"
-        msg += "╚═══════════════════════╝\n\n"
+        y_pos = len(sorted_dates) - 1
         
         for date_str in sorted_dates:
             data = stats[date_str]
             hours_with = data['hours_with_power']
             hours_without = data['hours_without_power']
             
-            total_with_power += hours_with
-            total_without_power += hours_without
-            days_count += 1
-            
+            # Парсимо дату
             date_obj = datetime.strptime(date_str, '%Y-%m-%d')
             day_name = date_obj.strftime('%a')
             day_short = {
@@ -165,52 +162,60 @@ class PowerScheduleBot:
                 'Thu': 'Чт', 'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Нд'
             }.get(day_name, day_name)
             
-            # Красивий прогрес-бар
+            label = f"{day_short} {date_obj.strftime('%d.%m')}"
+            
+            # Малюємо бари
+            # Зелений - світло
+            ax.barh(y_pos, hours_with, left=0, height=0.6, 
+                   color='#4CAF50', label='Світло' if y_pos == 0 else '')
+            
+            # Червоний - відключення
+            ax.barh(y_pos, hours_without, left=hours_with, height=0.6,
+                   color='#F44336', label='Відключення' if y_pos == 0 else '')
+            
+            # Текст з датою
+            ax.text(-1.5, y_pos, label, va='center', ha='right', 
+                   fontsize=12, fontweight='bold')
+            
+            # Текст з годинами
             percentage = int((hours_with / 24) * 100)
-            bar_length = 15
-            filled = int((percentage / 100) * bar_length)
+            ax.text(25, y_pos, f'{hours_with:.1f}г / {hours_without:.1f}г ({percentage}%)', 
+                   va='center', ha='left', fontsize=10)
             
-            # Використовуємо блоки для прогресу
-            bar = "▓" * filled + "░" * (bar_length - filled)
-            
-            msg += f"<b>╭─ {day_short} {date_obj.strftime('%d.%m.%Y')}</b>\n"
-            msg += f"│\n"
-            msg += f"│ {bar} {percentage}%\n"
-            msg += f"│\n"
-            msg += f"│ 💡 Світло:      {hours_with:.1f} год\n"
-            msg += f"│ 🌑 Відключення: {hours_without:.1f} год\n"
-            msg += f"╰{'─' * 25}\n\n"
+            y_pos -= 1
         
-        # Підсумки
-        if days_count > 1:
-            msg += "╔═══════════════════════╗\n"
-            msg += "║   <b>ЗАГАЛЬНІ ДАНІ</b>       ║\n"
-            msg += "╚═══════════════════════╝\n\n"
-            
-            avg_with_power = total_with_power / days_count
-            avg_without_power = total_without_power / days_count
-            
-            msg += f"📊 <b>За {days_count} днів:</b>\n\n"
-            msg += f"├─ Середнє на день:\n"
-            msg += f"│  💡 {avg_with_power:.1f} год світла\n"
-            msg += f"│  🌑 {avg_without_power:.1f} год без світла\n"
-            msg += f"│\n"
-            msg += f"├─ Всього:\n"
-            msg += f"│  💡 {total_with_power:.1f} год\n"
-            msg += f"│  🌑 {total_without_power:.1f} год\n"
-            msg += f"╰{'─' * 25}\n\n"
-            
-            # Візуальне співвідношення
-            total_hours = total_with_power + total_without_power
-            percentage_with = int((total_with_power / total_hours) * 100)
-            
-            msg += f"📈 <b>Загальне співвідношення:</b>\n"
-            msg += f"┌{'─' * 25}┐\n"
-            msg += f"│ 💡 Світло:      {percentage_with}%\n"
-            msg += f"│ 🌑 Відключення: {100-percentage_with}%\n"
-            msg += f"└{'─' * 25}┘\n"
+        # Налаштування осей
+        ax.set_xlim(-2, 28)
+        ax.set_ylim(-0.5, len(sorted_dates) - 0.5)
+        ax.set_xlabel('Години', fontsize=12, fontweight='bold')
+        ax.set_xticks(range(0, 25, 4))
+        ax.set_yticks([])
+        ax.grid(axis='x', alpha=0.3, linestyle='--')
         
-        return msg
+        # Легенда
+        ax.legend(loc='upper right', fontsize=10)
+        
+        # Загальна статистика внизу
+        if len(stats) > 1:
+            total_with = sum(d['hours_with_power'] for d in stats.values())
+            total_without = sum(d['hours_without_power'] for d in stats.values())
+            avg_with = total_with / len(stats)
+            
+            stats_text = f"📈 Середнє: {avg_with:.1f}г світла/день  |  "
+            stats_text += f"📊 Всього: {total_with:.1f}г світла, {total_without:.1f}г без світла"
+            
+            plt.figtext(0.5, 0.02, stats_text, ha='center', fontsize=10, 
+                       style='italic', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+        
+        plt.tight_layout()
+        
+        # Зберігаємо в буфер
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+        
+        return buf
     
     def format_schedule_message(self, data):
         periods = data.get('periods', [])
@@ -322,8 +327,22 @@ class PowerScheduleBot:
             await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard(), disable_web_page_preview=True)
         
         elif text == "📊 Статистика":
-            message = self.format_weekly_stats()
-            await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
+            # Генеруємо картинку
+            await update.message.reply_text("🎨 Генерую статистику...", reply_markup=self.get_main_keyboard())
+            
+            image_buf = self.generate_stats_image()
+            
+            if image_buf:
+                await update.message.reply_photo(
+                    photo=image_buf,
+                    caption="📊 Статистика відключень\nГрупа 3.1",
+                    reply_markup=self.get_main_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Статистики поки немає",
+                    reply_markup=self.get_main_keyboard()
+                )
         
         elif text == "🌐 Відкрити сайт":
             await update.message.reply_text(
@@ -342,12 +361,22 @@ class PowerScheduleBot:
         await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
     
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        message = self.format_weekly_stats()
-        await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
+        await update.message.reply_text("🎨 Генерую статистику...")
+        
+        image_buf = self.generate_stats_image()
+        
+        if image_buf:
+            await update.message.reply_photo(
+                photo=image_buf,
+                caption="📊 Статистика відключень\nГрупа 3.1",
+                reply_markup=self.get_main_keyboard()
+            )
+        else:
+            await update.message.reply_text("❌ Статистики поки немає")
     
     def run(self):
         now = self.get_kyiv_time()
-        logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
+        logger.info(f"Запуск бота з генерацією картинок. Київський час: {now.strftime('%H:%M')}")
         
         application = Application.builder().token(self.bot_token).build()
         
@@ -357,7 +386,7 @@ class PowerScheduleBot:
         application.add_handler(CommandHandler("stats", self.stats_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
-        logger.info("Бот запущено!")
+        logger.info("Бот запущено з генерацією зображень!")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
