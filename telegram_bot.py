@@ -454,7 +454,7 @@ class PowerScheduleBot:
                     va='center', ha='left',
                     fontsize=11, color='#FF6B6B')
 
-        ax.set_xlim(-3.5, 28)
+        ax.set_xlim(-4.5, 28)
         ax.set_ylim(-2.8, num_days + 0.5)
 
         ax.set_xticks(range(0, 25))
@@ -476,7 +476,7 @@ class PowerScheduleBot:
         # ВЕРТИКАЛЬНА ЛЕГЕНДА ЗЛІВА
         # =============================
 
-        legend_x = -3.0
+        legend_x = -3.8
         legend_y = -1.2
 
         rect_green = Rectangle((legend_x, legend_y), 0.4, 0.3,
