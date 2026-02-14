@@ -704,7 +704,7 @@ class PowerScheduleBot:
 
 def main():
     # ВСТАВТЕ СЮДИ ВАШ ТОКЕН
-    TOKEN = "ВАШ_ТОКЕН_ТУТ"
+    TOKEN = "8291719049:AAG3s_jDNdrYhpF8kQa6D9Mzb_HYNwByHSk"
     
     bot = PowerScheduleBot(TOKEN)
     
