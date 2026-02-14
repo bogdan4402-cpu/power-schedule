@@ -390,6 +390,151 @@ class PowerScheduleBot:
     def generate_stats_image(self):
         stats = self.load_stats()
         now = self.get_kyiv_time()
+
+        if not stats:
+            return None
+
+        sorted_dates = sorted(stats.keys())
+        num_days = len(sorted_dates)
+
+        fig_width = 16
+        fig_height = 6 + num_days * 1.0
+
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
+        ax.set_facecolor('white')
+
+        if num_days > 1:
+            first_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
+            last_date = datetime.strptime(sorted_dates[-1], '%Y-%m-%d')
+            title = f"Графік відключень світла {first_date.strftime('%d.%m')} - {last_date.strftime('%d.%m')}"
+        else:
+            date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
+            title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
+
+        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20)
+
+        for idx, date_str in enumerate(sorted_dates):
+            data = stats[date_str]
+            hours_with = data['hours_with_power']
+            hours_without = data['hours_without_power']
+
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            day_short = {
+                'Mon': 'ПН', 'Tue': 'ВТ', 'Wed': 'СР',
+                'Thu': 'ЧТ', 'Fri': 'ПТ', 'Sat': 'СБ', 'Sun': 'НД'
+            }.get(date_obj.strftime('%a'), '')
+
+            y_pos = num_days - idx - 1
+
+            for seg in range(48):
+                hour_decimal = seg / 2
+                has_power = self.get_hour_status(hour_decimal, date_str)
+
+                if has_power is None:
+                    color = '#CCCCCC'
+                else:
+                    color = '#7BC043' if has_power else '#FF6B6B'
+
+                rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76,
+                                 facecolor=color, edgecolor='white', linewidth=2.0)
+                ax.add_patch(rect)
+
+            date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
+            ax.text(-1.4, y_pos, date_label, va='center', ha='right',
+                    fontsize=12, weight='bold', color='#333333')
+
+            h_with = int(hours_with)
+            h_without = int(hours_without)
+
+            ax.text(25.0, y_pos + 0.2, f"{h_with}год",
+                    va='center', ha='left',
+                    fontsize=11, color='#7BC043', weight='bold')
+
+            ax.text(25.0, y_pos - 0.2, f"{h_without}год",
+                    va='center', ha='left',
+                    fontsize=11, color='#FF6B6B')
+
+        ax.set_xlim(-3.5, 28)
+        ax.set_ylim(-2.8, num_days + 0.5)
+
+        ax.set_xticks(range(0, 25))
+        ax.set_xticklabels([str(i) for i in range(0, 25)],
+                           fontsize=10, color='#888888', weight='bold')
+        ax.set_yticks([])
+
+        for x in [0, 4, 8, 12, 16, 20, 24]:
+            ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8)
+
+        for x in range(1, 24):
+            if x not in [4, 8, 12, 16, 20]:
+                ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5)
+
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
+        # =============================
+        # ВЕРТИКАЛЬНА ЛЕГЕНДА ЗЛІВА
+        # =============================
+
+        legend_x = -3.0
+        legend_y = -1.2
+
+        rect_green = Rectangle((legend_x, legend_y), 0.4, 0.3,
+                               facecolor='#7BC043', edgecolor='none')
+        ax.add_patch(rect_green)
+
+        ax.text(legend_x + 0.6, legend_y + 0.15,
+                'Світло було',
+                va='center', ha='left',
+                fontsize=11, color='#666666')
+
+        rect_red = Rectangle((legend_x, legend_y - 0.6), 0.4, 0.3,
+                             facecolor='#FF6B6B', edgecolor='none')
+        ax.add_patch(rect_red)
+
+        ax.text(legend_x + 0.6, legend_y - 0.45,
+                'Світла не було',
+                va='center', ha='left',
+                fontsize=11, color='#666666')
+
+        # =============================
+        # СТАТИСТИКА ПІД ЛЕГЕНДОЮ
+        # =============================
+
+        days_with_data = [
+            d for d in stats.values()
+            if d['hours_with_power'] > 0 or d['hours_without_power'] > 0
+        ]
+
+        if len(days_with_data) > 1:
+            total_with = sum(d['hours_with_power'] for d in days_with_data)
+            total_without = sum(d['hours_without_power'] for d in days_with_data)
+            avg_with = total_with / len(days_with_data)
+
+            stats_y = legend_y - 1.2
+
+            ax.text(legend_x, stats_y,
+                    f"Всього світло було: {int(total_with)}год",
+                    fontsize=10, color='#666666', va='top')
+
+            ax.text(legend_x, stats_y - 0.35,
+                    f"Всього світла не було: {int(total_without)}год",
+                    fontsize=10, color='#666666', va='top')
+
+            ax.text(legend_x, stats_y - 0.7,
+                    f"В середньому світло було {int(avg_with)}год за добу",
+                    fontsize=10, color='#666666', va='top')
+
+        plt.tight_layout(pad=1.5)
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150,
+                    bbox_inches='tight', facecolor='white', pad_inches=0.5)
+        buf.seek(0)
+        plt.close('all')
+
+        return buf
+
         
         if not stats:
             return None
