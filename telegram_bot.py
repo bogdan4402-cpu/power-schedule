@@ -104,7 +104,7 @@ class PowerScheduleBot:
         keyboard = [
             [KeyboardButton("⚡ Зараз є світло?")],
             [KeyboardButton("📅 Повний графік"), KeyboardButton("📊 Статистика")],
-            [KeyboardButton("⏱️ Таймер світла")],
+            [KeyboardButton("⏱️ Таймер світла (Ще в розробці, невірно показує інформацію)")],
             [KeyboardButton("🌐 Відкрити сайт")],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
