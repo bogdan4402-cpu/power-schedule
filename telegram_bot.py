@@ -1,16 +1,8 @@
 diff --git a/telegram_bot.py b/telegram_bot.py
-index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077052508ff 100644
+index 40a4d4ff1425c8224da868f17d65686a00579c80..a25315aba666251d32ef650e174b4c201cbc3491 100644
 --- a/telegram_bot.py
 +++ b/telegram_bot.py
-@@ -4,166 +4,216 @@
- 
- import logging
- from datetime import datetime, timezone, timedelta
- import json
- import os
- import io
- from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
- from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+@@ -12,158 +12,202 @@ from telegram.ext import Application, CommandHandler, MessageHandler, ContextTyp
  import matplotlib
  matplotlib.use('Agg')
  import matplotlib.pyplot as plt
@@ -28,18 +20,21 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
          self.stats_file = "weekly_stats.json"
          
          # ========================================
--        # 📌 ТУТ МІНЯТИ ГРАФІК!
--        # Формат: (година, хвилина, є_світло)
-+        # 📌 ТУТ МІНЯТИ ГРАФІКИ ПО ДНЯХ!
-+        # Ключ: "YYYY-MM-DD"
-+        # Формат періоду: (година, хвилина, є_світло)
+         # 📌 ТУТ МІНЯТИ ГРАФІК!
+         # Формат: (година, хвилина, є_світло)
          # ========================================
--        self.schedule_31 = [
--            (0, 0, True),      # 00:00 - світло
--            (6, 30, False),    # 06:30 - відключення  
--            (9, 30, True),     # 09:30 - світло до кінця доби
--        ]
-+        self.schedules_31_by_date = {
+         self.schedule_31 = [
+             (0, 0, True),      # 00:00 - світло
+             (6, 30, False),    # 06:30 - відключення  
+             (9, 30, True),     # 09:30 - світло до кінця доби
+         ]
++
++        # ========================================
++        # 📌 ДОДАТКОВО: графіки по конкретних датах
++        # Якщо дата не знайдена — використовується schedule_31 вище
++        # Формат: "YYYY-MM-DD": [(година, хвилина, є_світло), ...]
++        # ========================================
++        self.schedule_31_by_date = {
 +            "2026-02-14": [
 +                (0, 0, True),
 +                (6, 30, False),
@@ -61,63 +56,29 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
      
      def init_stats(self):
          if not os.path.exists(self.stats_file):
--            # ========================================
--            # 📌 ТУТ ДОДАВАТИ Нові ДНІ!
--            # ========================================
--            stats = {
--                "2026-02-14": {
--                    'hours_with_power': 21.0,    # Години зі світлом
--                    'hours_without_power': 3.0,  # Години без світла
--                },
--                "2026-02-15": {
--                    'hours_with_power': 0.0,     # 0 = графіки відсутні
--                    'hours_without_power': 0.0,  # 0 = графіки відсутні
--                }
--            }
-+            stats = self.build_stats_from_schedules()
+             # ========================================
+             # 📌 ТУТ ДОДАВАТИ Нові ДНІ!
+             # ========================================
+             stats = {
+                 "2026-02-14": {
+                     'hours_with_power': 21.0,    # Години зі світлом
+                     'hours_without_power': 3.0,  # Години без світла
+                 },
+                 "2026-02-15": {
+                     'hours_with_power': 0.0,     # 0 = графіки відсутні
+                     'hours_without_power': 0.0,  # 0 = графіки відсутні
+                 }
+             }
              self.save_stats(stats)
-+
-+    def build_stats_from_schedules(self):
-+        """Автоматично рахує години зі світлом/без світла для кожного дня з графіком."""
-+        stats = {}
-+        for date_str, schedule in self.schedules_31_by_date.items():
-+            minutes_with_power = 0
-+
-+            for i, (h, m, has_power) in enumerate(schedule):
-+                start_min = h * 60 + m
-+                if i + 1 < len(schedule):
-+                    next_h, next_m, _ = schedule[i + 1]
-+                    end_min = next_h * 60 + next_m
-+                else:
-+                    end_min = 24 * 60
-+
-+                if has_power:
-+                    minutes_with_power += end_min - start_min
-+
-+            hours_with = round(minutes_with_power / 60, 1)
-+            stats[date_str] = {
-+                'hours_with_power': hours_with,
-+                'hours_without_power': round(24 - hours_with, 1),
-+            }
-+
-+        return stats
-+
+     
 +    def get_schedule_for_date(self, date_obj=None):
-+        """Повертає графік для конкретної дати або найближчий доступний."""
-+        if not self.schedules_31_by_date:
-+            return [(0, 0, True)]
-+
++        """Повертає графік для дати, а якщо його немає — базовий schedule_31."""
 +        if date_obj is None:
 +            date_obj = self.get_kyiv_time().date()
 +
 +        date_key = date_obj.strftime('%Y-%m-%d')
-+        if date_key in self.schedules_31_by_date:
-+            return self.schedules_31_by_date[date_key]
++        return self.schedule_31_by_date.get(date_key, self.schedule_31)
 +
-+        # Якщо немає графіка на сьогодні - беремо останній відомий
-+        latest_date = max(self.schedules_31_by_date.keys())
-+        return self.schedules_31_by_date[latest_date]
-     
      def load_stats(self):
          try:
              with open(self.stats_file, 'r', encoding='utf-8') as f:
@@ -146,8 +107,9 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
      def get_current_status(self):
          now = self.get_kyiv_time()
          current_minutes = now.hour * 60 + now.minute
-+        schedule = self.get_schedule_for_date(now.date())
          
++        schedule = self.get_schedule_for_date(now.date())
++
          periods = []
 -        for i, (h, m, status) in enumerate(self.schedule_31):
 +        for i, (h, m, status) in enumerate(schedule):
@@ -179,17 +141,19 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
      
      def get_full_schedule(self):
          now = self.get_kyiv_time()
+-        
 +        schedule = self.get_schedule_for_date(now.date())
-         
++
          schedule_data = {
              'timestamp': now.isoformat(),
              'group': '3.1',
              'periods': []
          }
-         
+-        
 -        for i, (h, m, status) in enumerate(self.schedule_31):
 -            if i + 1 < len(self.schedule_31):
 -                next_h, next_m, _ = self.schedule_31[i + 1]
++
 +        for i, (h, m, status) in enumerate(schedule):
 +            if i + 1 < len(schedule):
 +                next_h, next_m, _ = schedule[i + 1]
@@ -207,13 +171,17 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
          return schedule_data
      
 -    def get_hour_status(self, hour_decimal):
-+    def get_hour_status(self, hour_decimal, date_str):
++    def get_hour_status(self, hour_decimal, date_str=None):
          current_minutes = hour_decimal * 60
 -        
 -        for i, (h, m, status) in enumerate(self.schedule_31):
-+        try:
-+            date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
-+        except ValueError:
++
++        if date_str:
++            try:
++                date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
++            except ValueError:
++                date_obj = self.get_kyiv_time().date()
++        else:
 +            date_obj = self.get_kyiv_time().date()
 +
 +        schedule = self.get_schedule_for_date(date_obj)
@@ -250,7 +218,7 @@ index 40a4d4ff1425c8224da868f17d65686a00579c80..b51dbcb95ca6033eeea3ec53294f4077
          
          fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
          ax.set_facecolor('white')
-@@ -182,51 +232,51 @@ class PowerScheduleBot:
+@@ -182,51 +226,51 @@ class PowerScheduleBot:
          # Малюємо дні
          for idx, date_str in enumerate(sorted_dates):
              data = stats[date_str]
