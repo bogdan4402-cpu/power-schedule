@@ -27,10 +27,6 @@ class PowerScheduleBot:
         
         self.schedule_31 = [
             (0, 0, True),
-            (6, 30, False),
-            (9, 0, True),
-            (16, 30, False),
-            (19, 30, True),
         ]
         
         self.init_stats()
