@@ -39,8 +39,8 @@ class PowerScheduleBot:
         if not os.path.exists(self.stats_file):
             stats = {
                 "2026-02-14": {
-                    'hours_with_power': 16.0,
-                    'hours_without_power': 8.5,
+                    'hours_with_power': 18.5,
+                    'hours_without_power': 5.5,
                     'outages_count': 2,
                 }
             }
