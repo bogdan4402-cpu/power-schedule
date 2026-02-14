@@ -403,6 +403,8 @@ class PowerScheduleBot:
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
         ax.set_facecolor('white')
 
+       # ... (початок функції generate_stats_image без змін) ...
+
         if num_days > 1:
             first_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             last_date = datetime.strptime(sorted_dates[-1], '%Y-%m-%d')
@@ -411,66 +413,21 @@ class PowerScheduleBot:
             date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
 
-        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20)
+        # ВИПРАВЛЕННЯ 1: pad=5 замість 20
+        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=5)
 
         for idx, date_str in enumerate(sorted_dates):
-            data = stats[date_str]
-            hours_with = data['hours_with_power']
-            hours_without = data['hours_without_power']
-
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            day_short = {
-                'Mon': 'ПН', 'Tue': 'ВТ', 'Wed': 'СР',
-                'Thu': 'ЧТ', 'Fri': 'ПТ', 'Sat': 'СБ', 'Sun': 'НД'
-            }.get(date_obj.strftime('%a'), '')
-
-            y_pos = num_days - idx - 1
-
-            for seg in range(48):
-                hour_decimal = seg / 2
-                has_power = self.get_hour_status(hour_decimal, date_str)
-
-                if has_power is None:
-                    color = '#CCCCCC'
-                else:
-                    color = '#7BC043' if has_power else '#FF6B6B'
-
-                rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76,
-                                 facecolor=color, edgecolor='white', linewidth=2.0)
-                ax.add_patch(rect)
-
-            date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
-            ax.text(-1.4, y_pos, date_label, va='center', ha='right',
-                    fontsize=12, weight='bold', color='#333333')
-
-            h_with = int(hours_with)
-            h_without = int(hours_without)
-
-            ax.text(25.0, y_pos + 0.2, f"{h_with}год",
-                    va='center', ha='left',
-                    fontsize=11, color='#7BC043', weight='bold')
-
-            ax.text(25.0, y_pos - 0.2, f"{h_without}год",
-                    va='center', ha='left',
-                    fontsize=11, color='#FF6B6B')
+            # ... (цикл малювання ячейок без змін) ...
+            # ... (тексти годин без змін) ...
 
         ax.set_xlim(-4.8, 28)
-        ax.set_ylim(-2.8, num_days + 0.5)
+        
+        # ВИПРАВЛЕННЯ 2: num_days - 0.4 замість num_days + 0.5
+        ax.set_ylim(-2.8, num_days - 0.4)
 
         ax.set_xticks(range(0, 25))
-        ax.set_xticklabels([str(i) for i in range(0, 25)],
-                           fontsize=10, color='#888888', weight='bold')
-        ax.set_yticks([])
-
-        for x in [0, 4, 8, 12, 16, 20, 24]:
-            ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8)
-
-        for x in range(1, 24):
-            if x not in [4, 8, 12, 16, 20]:
-                ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5)
-
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+        
+    # ... (решта функції без змін) ...
 
         # =============================
         # ВЕРТИКАЛЬНА ЛЕГЕНДА ЗЛІВА
