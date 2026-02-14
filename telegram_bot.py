@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот - автоочищення старих днів"""
+"""Telegram бот - ВИПРАВЛЕНО легенду та статистику завтра"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -41,14 +41,12 @@ class PowerScheduleBot:
         }
         
         self.init_stats()
-        self.cleanup_old_days()  # Видаляє старі дні
+        self.cleanup_old_days()
     
     def cleanup_old_days(self):
-        """Автоматично видаляє дні старше вчорашнього дня"""
         now = self.get_kyiv_time()
         yesterday = (now - timedelta(days=1)).strftime('%Y-%m-%d')
         
-        # Видаляємо зі schedules
         to_remove = []
         for date_str in self.schedules.keys():
             if date_str < yesterday:
@@ -58,7 +56,6 @@ class PowerScheduleBot:
             del self.schedules[date_str]
             logger.info(f"Видалено старий графік: {date_str}")
         
-        # Видаляємо зі статистики
         stats = self.load_stats()
         updated = False
         
@@ -163,6 +160,28 @@ class PowerScheduleBot:
         
         return periods[0]
     
+    def calculate_day_stats(self, periods):
+        """Рахує статистику для списку періодів"""
+        total_with = 0
+        for period in periods:
+            start_h, start_m = map(int, period['start'].split(':'))
+            end_h, end_m = map(int, period['end'].split(':'))
+            
+            start_min = start_h * 60 + start_m
+            end_min = end_h * 60 + end_m if period['end'] != "00:00" else 1440
+            
+            duration = end_min - start_min
+            
+            if period['has_power']:
+                total_with += duration
+        
+        total_without = 1440 - total_with
+        
+        return {
+            'with_power': total_with / 60,
+            'without_power': total_without / 60
+        }
+    
     def get_full_schedule(self):
         now = self.get_kyiv_time()
         today_str = now.strftime('%Y-%m-%d')
@@ -241,7 +260,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Графік з годинними мітками і легендою нижче"""
+        """Графік з легендою ЩЕ НИЖЧЕ (не перекривається)"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -252,8 +271,8 @@ class PowerScheduleBot:
         num_days = len(sorted_dates)
         
         fig_width = 16
-        # БІЛЬШЕ місця для легенди внизу
-        fig_height = 6 + num_days * 1.1
+        # ЩЕ БІЛЬШЕ місця для легенди
+        fig_height = 7 + num_days * 1.1
         
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
         ax.set_facecolor('white')
@@ -328,20 +347,19 @@ class PowerScheduleBot:
         
         # Осі
         ax.set_xlim(-1.8, 28)
-        # БІЛЬШЕ місця внизу для легенди
-        ax.set_ylim(-3.0, num_days + 0.1)
+        # ЩЕ БІЛЬШЕ місця внизу
+        ax.set_ylim(-3.5, num_days + 0.1)
         
-        # КОЖНА ГОДИНА (0, 1, 2, 3, ..., 24)
+        # Годинні мітки
         ax.set_xticks(range(0, 25))
         ax.set_xticklabels([str(i) for i in range(0, 25)], 
                           fontsize=10, color='#888888', weight='bold')
         ax.set_yticks([])
         
-        # Вертикальні лінії кожні 4 години (товщі)
+        # Сітка
         for x in [0, 4, 8, 12, 16, 20, 24]:
             ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8, zorder=0)
         
-        # Тонкі лінії кожну годину
         for x in range(1, 24):
             if x not in [4, 8, 12, 16, 20]:
                 ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5, zorder=0)
@@ -349,8 +367,8 @@ class PowerScheduleBot:
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # ====== ЛЕГЕНДА НИЖЧЕ (щоб не перекривала цифри) ======
-        legend_y = -1.8
+        # ====== ЛЕГЕНДА ЩЕ НИЖЧЕ ======
+        legend_y = -2.2
         
         rect_green = Rectangle((1, legend_y), 0.8, 0.35, 
                                facecolor='#7BC043', edgecolor='none')
@@ -406,6 +424,7 @@ class PowerScheduleBot:
         return buf
     
     def format_schedule_message(self, data):
+        """З СТАТИСТИКОЮ для завтра"""
         now = self.get_kyiv_time()
         
         msg = f"⚡️ <b>Графік відключень - Група 3.1</b>\n"
@@ -424,6 +443,7 @@ class PowerScheduleBot:
         
         msg += "─" * 35 + "\n\n"
         
+        # СЬОГОДНІ
         today_periods = data['today']['periods']
         if today_periods:
             msg += "<b>📅 Повний графік:</b>\n\n"
@@ -448,15 +468,14 @@ class PowerScheduleBot:
                 else:
                     msg += f"      {start}-{end}  {emoji} {status_text}\n"
             
-            total_with = sum((int(p['end'].split(':')[0]) * 60 + int(p['end'].split(':')[1]) if p['end'] != "00:00" else 1440) - 
-                           (int(p['start'].split(':')[0]) * 60 + int(p['start'].split(':')[1])) 
-                           for p in today_periods if p['has_power'])
-            total_without = 1440 - total_with
+            # Рахуємо статистику для сьогодні
+            stats_today = self.calculate_day_stats(today_periods)
             
             msg += f"\n📊 <b>Статистика:</b>\n"
-            msg += f"🟢 Зі світлом: {total_with/60:.1f} год\n"
-            msg += f"🔴 Без світла: {total_without/60:.1f} год\n"
+            msg += f"🟢 Зі світлом: {stats_today['with_power']:.1f} год\n"
+            msg += f"🔴 Без світла: {stats_today['without_power']:.1f} год\n"
         
+        # ЗАВТРА
         tomorrow_periods = data['tomorrow']['periods']
         if tomorrow_periods:
             tomorrow_date = datetime.strptime(data['tomorrow']['date'], '%Y-%m-%d')
@@ -471,6 +490,13 @@ class PowerScheduleBot:
                 status_text = "Є світло" if has_power else "Відключення"
                 
                 msg += f"      {start}-{end}  {emoji} {status_text}\n"
+            
+            # ДОДАЄМО СТАТИСТИКУ ДЛЯ ЗАВТРА
+            stats_tomorrow = self.calculate_day_stats(tomorrow_periods)
+            
+            msg += f"\n📊 <b>Статистика:</b>\n"
+            msg += f"🟢 Зі світлом: {stats_tomorrow['with_power']:.1f} год\n"
+            msg += f"🔴 Без світла: {stats_tomorrow['without_power']:.1f} год\n"
         
         msg += f"\n⚠️ Графіки можуть змінюватись!"
         
