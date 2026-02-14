@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з ЯКІСНИМ графіком"""
+"""Telegram бот з виправленою легендою"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -141,7 +141,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """ЯКІСНИЙ графік як у СвітлоБот"""
+        """Графік з МАЛЕНЬКИМИ квадратиками в легенді"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -151,9 +151,8 @@ class PowerScheduleBot:
         sorted_dates = sorted(stats.keys())
         num_days = len(sorted_dates)
         
-        # Створюємо фігуру з ДОСТАТНІМ місцем для легенди
         fig_width = 16
-        fig_height = 5 + num_days * 1.1  # Більше місця для легенди
+        fig_height = 5 + num_days * 1.1
         
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
         ax.set_facecolor('white')
@@ -167,9 +166,9 @@ class PowerScheduleBot:
             date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
         
-        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20, weight='normal', loc='center')
+        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20, weight='normal')
         
-        # Малюємо кожен день
+        # Малюємо дні
         for idx, date_str in enumerate(sorted_dates):
             data = stats[date_str]
             hours_with = data['hours_with_power']
@@ -183,67 +182,72 @@ class PowerScheduleBot:
             
             y_pos = num_days - idx - 1
             
-            # Малюємо 48 сегментів (кожні 30 хв)
+            # 48 сегментів
             for seg in range(48):
                 hour_decimal = seg / 2
                 has_power = self.get_hour_status(hour_decimal)
-                
-                # Кольори як у СвітлоБот
                 color = '#7BC043' if has_power else '#FF6B6B'
                 
                 rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
                                 facecolor=color, edgecolor='white', linewidth=1.2)
                 ax.add_patch(rect)
             
-            # Лейбл дати зліва
+            # Дата зліва
             date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
             ax.text(-1.2, y_pos, date_label, va='center', ha='right', 
                    fontsize=12, weight='bold', color='#333333')
             
-            # Статистика справа ЗЕЛЕНИМ
-            h_int = int(hours_with)
-            m_int = int((hours_with % 1) * 60)
-            text_with = f"{h_int}год" if m_int == 0 else f"{h_int}год {m_int}хв"
+            # Статистика справа
+            h_with = int(hours_with)
+            m_with = int((hours_with % 1) * 60)
+            text_with = f"{h_with}год" if m_with == 0 else f"{h_with}год {m_with}хв"
             
-            ax.text(25.0, y_pos, text_with, va='center', ha='left',
-                   fontsize=12, color='#7BC043', weight='bold')
+            # ЗЕЛЕНИЙ текст зверху
+            ax.text(25.0, y_pos + 0.2, text_with, va='center', ha='left',
+                   fontsize=11, color='#7BC043', weight='bold')
+            
+            # ЧЕРВОНИЙ текст внизу
+            h_without = int(hours_without)
+            m_without = int((hours_without % 1) * 60)
+            text_without = f"{h_without}год" if m_without == 0 else f"{h_without}год {m_without}хв"
+            
+            ax.text(25.0, y_pos - 0.2, text_without, va='center', ha='left',
+                   fontsize=11, color='#FF6B6B', weight='normal')
         
-        # Налаштування осей
+        # Осі
         ax.set_xlim(-1.8, 28)
         ax.set_ylim(-2.2, num_days + 0.1)
         
-        # Години знизу
         ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
         ax.set_xticklabels(['0', '4', '8', '12', '16', '20', '24'], 
                           fontsize=11, color='#BBBBBB')
         ax.set_yticks([])
         
-        # Вертикальні лінії
+        # Сітка
         for x in [0, 4, 8, 12, 16, 20, 24]:
             ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.7, zorder=0)
         
-        # Прибираємо рамки
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # ======= ЛЕГЕНДА ВНИЗУ =======
+        # ======= ЛЕГЕНДА З МАЛЕНЬКИМИ КВАДРАТИКАМИ =======
         legend_y = -1.2
         
-        # Зелений квадрат
-        rect_green = Rectangle((1, legend_y), 1.8, 0.45, 
+        # МАЛЕНЬКИЙ зелений квадрат (0.8 x 0.35 замість 1.8 x 0.45)
+        rect_green = Rectangle((1, legend_y), 0.8, 0.35, 
                                facecolor='#7BC043', edgecolor='none')
         ax.add_patch(rect_green)
-        ax.text(3.1, legend_y + 0.225, 'Світло було', 
+        ax.text(2.0, legend_y + 0.175, 'Світло було', 
                va='center', ha='left', fontsize=11, color='#666666')
         
-        # Червоний квадрат
-        rect_red = Rectangle((10, legend_y), 1.8, 0.45,
+        # МАЛЕНЬКИЙ червоний квадрат
+        rect_red = Rectangle((8, legend_y), 0.8, 0.35,
                              facecolor='#FF6B6B', edgecolor='none')
         ax.add_patch(rect_red)
-        ax.text(12.1, legend_y + 0.225, 'Світла не було',
+        ax.text(9.0, legend_y + 0.175, 'Світла не було',
                va='center', ha='left', fontsize=11, color='#666666')
         
-        # Статистика (якщо більше 1 дня)
+        # Статистика
         if num_days > 1:
             total_with = sum(d['hours_with_power'] for d in stats.values())
             total_without = sum(d['hours_without_power'] for d in stats.values())
@@ -272,10 +276,8 @@ class PowerScheduleBot:
             ax.text(1, stats_y - 0.25, line2, fontsize=10, color='#666666', va='top')
             ax.text(1, stats_y - 0.50, line3, fontsize=10, color='#666666', va='top')
         
-        # Фіксуємо margins щоб легенда не обрізалась
         plt.tight_layout(pad=1.5)
         
-        # Зберігаємо
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
                    facecolor='white', pad_inches=0.4)
