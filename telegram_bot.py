@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот для графіку відключень - зі статистикою за тиждень"""
+"""Telegram бот для графіку відключень - тільки 14.02.2026"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -33,20 +33,16 @@ class PowerScheduleBot:
         self.init_stats()
     
     def init_stats(self):
-        """Ініціалізує файл статистики"""
+        """Ініціалізує файл статистики ТІЛЬКИ на 14.02.2026"""
         if not os.path.exists(self.stats_file):
-            # Створюємо статистику за останні 7 днів
-            stats = {}
-            now = self.get_kyiv_time()
-            
-            for i in range(7):
-                date = (now - timedelta(days=i)).strftime('%Y-%m-%d')
-                stats[date] = {
-                    'hours_with_power': 15.5,  # Годин зі світлом
-                    'hours_without_power': 8.5,  # Годин без світла
-                    'outages_count': 2,  # Кількість відключень
+            stats = {
+                # ТІЛЬКИ ОДИН ДЕНЬ - 14.02.2026
+                "2026-02-14": {
+                    'hours_with_power': 15.5,
+                    'hours_without_power': 8.5,
+                    'outages_count': 2,
                 }
-            
+            }
             self.save_stats(stats)
     
     def load_stats(self):
@@ -133,65 +129,66 @@ class PowerScheduleBot:
         return schedule_data
     
     def format_weekly_stats(self):
-        """Форматує статистику за тиждень"""
+        """Форматує статистику (тільки дні що є в базі)"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
-        msg = "📊 <b>СТАТИСТИКА ЗА ТИЖДЕНЬ</b>\n"
+        if not stats:
+            return "📊 Статистики поки немає.\n\n💡 Ви можете додавати дані за кожен день вручну, редагуючи файл weekly_stats.json на сервері."
+        
+        msg = "📊 <b>СТАТИСТИКА</b>\n"
         msg += f"📍 Група: 3.1\n"
         msg += f"🕐 {now.strftime('%d.%m.%Y %H:%M')}\n\n"
         msg += "─" * 35 + "\n\n"
         
-        # Останні 7 днів
+        # Показуємо всі дні що є в базі
+        sorted_dates = sorted(stats.keys(), reverse=True)  # Від новіших до старіших
+        
         total_with_power = 0
         total_without_power = 0
+        days_count = 0
         
-        for i in range(6, -1, -1):  # Від старішої дати до новішої
-            date = (now - timedelta(days=i)).strftime('%Y-%m-%d')
-            day_name = (now - timedelta(days=i)).strftime('%a')
+        for date_str in sorted_dates:
+            data = stats[date_str]
+            hours_with = data['hours_with_power']
+            hours_without = data['hours_without_power']
+            
+            total_with_power += hours_with
+            total_without_power += hours_without
+            days_count += 1
+            
+            # Парсимо дату
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            day_name = date_obj.strftime('%a')
             day_short = {
                 'Mon': 'Пн', 'Tue': 'Вт', 'Wed': 'Ср', 
                 'Thu': 'Чт', 'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Нд'
             }.get(day_name, day_name)
             
-            if date in stats:
-                data = stats[date]
-                hours_with = data['hours_with_power']
-                hours_without = data['hours_without_power']
-                
-                total_with_power += hours_with
-                total_without_power += hours_without
-                
-                # Візуальний прогрес-бар
-                percentage = int((hours_with / 24) * 100)
-                bar_length = 10
-                filled = int((percentage / 100) * bar_length)
-                bar = "🟢" * filled + "🔴" * (bar_length - filled)
-                
-                msg += f"<b>{day_short} {(now - timedelta(days=i)).strftime('%d.%m')}</b>\n"
-                msg += f"{bar} {percentage}%\n"
-                msg += f"  🟢 {hours_with:.1f}год  🔴 {hours_without:.1f}год\n\n"
+            # Візуальний прогрес-бар
+            percentage = int((hours_with / 24) * 100)
+            bar_length = 10
+            filled = int((percentage / 100) * bar_length)
+            bar = "🟢" * filled + "🔴" * (bar_length - filled)
+            
+            msg += f"<b>{day_short} {date_obj.strftime('%d.%m.%Y')}</b>\n"
+            msg += f"{bar} {percentage}%\n"
+            msg += f"  🟢 {hours_with:.1f}год  🔴 {hours_without:.1f}год\n\n"
         
-        msg += "─" * 35 + "\n\n"
-        
-        # Загальна статистика
-        avg_with_power = total_with_power / 7
-        avg_without_power = total_without_power / 7
-        
-        msg += "<b>📈 Середнє за тиждень:</b>\n"
-        msg += f"🟢 Зі світлом: {avg_with_power:.1f} год/день\n"
-        msg += f"🔴 Без світла: {avg_without_power:.1f} год/день\n\n"
-        
-        msg += f"<b>📊 Всього за тиждень:</b>\n"
-        msg += f"🟢 Зі світлом: {total_with_power:.1f} год\n"
-        msg += f"🔴 Без світла: {total_without_power:.1f} год\n\n"
-        
-        # Прогноз
-        msg += "<b>🔮 Сьогодні очікується:</b>\n"
-        msg += "🟢 15.5 год зі світлом\n"
-        msg += "🔴 8.5 год без світла\n\n"
-        
-        msg += "⚠️ Дані приблизні, графіки можуть змінюватись!"
+        # Якщо є більше 1 дня - показуємо статистику
+        if days_count > 1:
+            msg += "─" * 35 + "\n\n"
+            
+            avg_with_power = total_with_power / days_count
+            avg_without_power = total_without_power / days_count
+            
+            msg += f"<b>📈 Середнє за {days_count} днів:</b>\n"
+            msg += f"🟢 Зі світлом: {avg_with_power:.1f} год/день\n"
+            msg += f"🔴 Без світла: {avg_without_power:.1f} год/день\n\n"
+            
+            msg += f"<b>📊 Всього:</b>\n"
+            msg += f"🟢 Зі світлом: {total_with_power:.1f} год\n"
+            msg += f"🔴 Без світла: {total_without_power:.1f} год\n\n"
         
         return msg
     
@@ -330,7 +327,8 @@ class PowerScheduleBot:
     
     def run(self):
         now = self.get_kyiv_time()
-        logger.info(f"Запуск бота зі статистикою. Київський час: {now.strftime('%H:%M')}")
+        logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
+        logger.info("Статистика: тільки 14.02.2026")
         
         application = Application.builder().token(self.bot_token).build()
         
@@ -340,7 +338,7 @@ class PowerScheduleBot:
         application.add_handler(CommandHandler("stats", self.stats_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
-        logger.info("Бот запущено з постійним меню та статистикою!")
+        logger.info("Бот запущено!")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
