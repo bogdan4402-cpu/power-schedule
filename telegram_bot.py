@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+oʻ#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Telegram бот з генерацією картинки статистики"""
 
@@ -28,9 +28,7 @@ class PowerScheduleBot:
         self.schedule_31 = [
             (0, 0, True),
             (6, 30,False),
-            (6, 30,True),
             (9, 30,False),
-            (9, 30,True),
         ]
         
         self.init_stats()
