@@ -55,10 +55,7 @@ class PowerScheduleBot:
                     'hours_with_power': 0.0,     # 0 = графіки відсутні
                     'hours_without_power': 0.0,  # 0 = графіки відсутні
                     
-                     },
-                "2026-02-17": {
-                    'hours_with_power': 0.0,     # 0 = графіки відсутні
-                    'hours_without_power': 0.0,  # 0 = графіки відсутні
+                
                 }
                 }     
                 }
