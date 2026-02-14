@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот для графіку відключень - тільки 14.02.2026"""
+"""Telegram бот з красивою статистикою"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -20,23 +20,19 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         
-        # Графік для групи 3.1
         self.schedule_31 = [
-            (0, 0, True),      # 00:00-06:30 світло
-            (6, 30, False),    # 06:30-09:00 відключення
-            (9, 0, True),      # 09:00-13:30 світло
-            (13, 30, False),   # 13:30-19:30 відключення
-            (19, 30, True),    # 19:30-00:00 світло
+            (0, 0, True),
+            (6, 30, False),
+            (9, 0, True),
+            (13, 30, False),
+            (19, 30, True),
         ]
         
-        # Ініціалізуємо статистику
         self.init_stats()
     
     def init_stats(self):
-        """Ініціалізує файл статистики ТІЛЬКИ на 14.02.2026"""
         if not os.path.exists(self.stats_file):
             stats = {
-                # ТІЛЬКИ ОДИН ДЕНЬ - 14.02.2026
                 "2026-02-14": {
                     'hours_with_power': 15.5,
                     'hours_without_power': 8.5,
@@ -46,7 +42,6 @@ class PowerScheduleBot:
             self.save_stats(stats)
     
     def load_stats(self):
-        """Завантажує статистику"""
         try:
             with open(self.stats_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -54,7 +49,6 @@ class PowerScheduleBot:
             return {}
     
     def save_stats(self, stats):
-        """Зберігає статистику"""
         try:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(stats, f, ensure_ascii=False, indent=2)
@@ -62,7 +56,6 @@ class PowerScheduleBot:
             logger.error(f"Помилка збереження статистики: {e}")
     
     def get_main_keyboard(self):
-        """Головне меню"""
         keyboard = [
             [KeyboardButton("⚡ Зараз є світло?")],
             [KeyboardButton("📅 Повний графік"), KeyboardButton("📊 Статистика")],
@@ -129,24 +122,32 @@ class PowerScheduleBot:
         return schedule_data
     
     def format_weekly_stats(self):
-        """Форматує статистику (тільки дні що є в базі)"""
+        """КРАСИВА статистика"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
         if not stats:
-            return "📊 Статистики поки немає.\n\n💡 Ви можете додавати дані за кожен день вручну, редагуючи файл weekly_stats.json на сервері."
+            return "📊 Статистики поки немає."
         
-        msg = "📊 <b>СТАТИСТИКА</b>\n"
-        msg += f"📍 Група: 3.1\n"
-        msg += f"🕐 {now.strftime('%d.%m.%Y %H:%M')}\n\n"
-        msg += "─" * 35 + "\n\n"
+        # Заголовок
+        msg = "┏━━━━━━━━━━━━━━━━━━━━━┓\n"
+        msg += "┃  📊 <b>СТАТИСТИКА</b>        ┃\n"
+        msg += "┗━━━━━━━━━━━━━━━━━━━━━┛\n\n"
         
-        # Показуємо всі дні що є в базі
-        sorted_dates = sorted(stats.keys(), reverse=True)  # Від новіших до старіших
+        msg += f"📍 Група: <b>3.1</b>\n"
+        msg += f"📅 {now.strftime('%d.%m.%Y')}\n"
+        msg += f"🕐 {now.strftime('%H:%M')}\n\n"
+        
+        # Дні
+        sorted_dates = sorted(stats.keys(), reverse=True)
         
         total_with_power = 0
         total_without_power = 0
         days_count = 0
+        
+        msg += "╔═══════════════════════╗\n"
+        msg += "║   <b>ДАНІ ПО ДНЯХ</b>        ║\n"
+        msg += "╚═══════════════════════╝\n\n"
         
         for date_str in sorted_dates:
             data = stats[date_str]
@@ -157,7 +158,6 @@ class PowerScheduleBot:
             total_without_power += hours_without
             days_count += 1
             
-            # Парсимо дату
             date_obj = datetime.strptime(date_str, '%Y-%m-%d')
             day_name = date_obj.strftime('%a')
             day_short = {
@@ -165,30 +165,50 @@ class PowerScheduleBot:
                 'Thu': 'Чт', 'Fri': 'Пт', 'Sat': 'Сб', 'Sun': 'Нд'
             }.get(day_name, day_name)
             
-            # Візуальний прогрес-бар
+            # Красивий прогрес-бар
             percentage = int((hours_with / 24) * 100)
-            bar_length = 10
+            bar_length = 15
             filled = int((percentage / 100) * bar_length)
-            bar = "🟢" * filled + "🔴" * (bar_length - filled)
             
-            msg += f"<b>{day_short} {date_obj.strftime('%d.%m.%Y')}</b>\n"
-            msg += f"{bar} {percentage}%\n"
-            msg += f"  🟢 {hours_with:.1f}год  🔴 {hours_without:.1f}год\n\n"
+            # Використовуємо блоки для прогресу
+            bar = "▓" * filled + "░" * (bar_length - filled)
+            
+            msg += f"<b>╭─ {day_short} {date_obj.strftime('%d.%m.%Y')}</b>\n"
+            msg += f"│\n"
+            msg += f"│ {bar} {percentage}%\n"
+            msg += f"│\n"
+            msg += f"│ 💡 Світло:      {hours_with:.1f} год\n"
+            msg += f"│ 🌑 Відключення: {hours_without:.1f} год\n"
+            msg += f"╰{'─' * 25}\n\n"
         
-        # Якщо є більше 1 дня - показуємо статистику
+        # Підсумки
         if days_count > 1:
-            msg += "─" * 35 + "\n\n"
+            msg += "╔═══════════════════════╗\n"
+            msg += "║   <b>ЗАГАЛЬНІ ДАНІ</b>       ║\n"
+            msg += "╚═══════════════════════╝\n\n"
             
             avg_with_power = total_with_power / days_count
             avg_without_power = total_without_power / days_count
             
-            msg += f"<b>📈 Середнє за {days_count} днів:</b>\n"
-            msg += f"🟢 Зі світлом: {avg_with_power:.1f} год/день\n"
-            msg += f"🔴 Без світла: {avg_without_power:.1f} год/день\n\n"
+            msg += f"📊 <b>За {days_count} днів:</b>\n\n"
+            msg += f"├─ Середнє на день:\n"
+            msg += f"│  💡 {avg_with_power:.1f} год світла\n"
+            msg += f"│  🌑 {avg_without_power:.1f} год без світла\n"
+            msg += f"│\n"
+            msg += f"├─ Всього:\n"
+            msg += f"│  💡 {total_with_power:.1f} год\n"
+            msg += f"│  🌑 {total_without_power:.1f} год\n"
+            msg += f"╰{'─' * 25}\n\n"
             
-            msg += f"<b>📊 Всього:</b>\n"
-            msg += f"🟢 Зі світлом: {total_with_power:.1f} год\n"
-            msg += f"🔴 Без світла: {total_without_power:.1f} год\n\n"
+            # Візуальне співвідношення
+            total_hours = total_with_power + total_without_power
+            percentage_with = int((total_with_power / total_hours) * 100)
+            
+            msg += f"📈 <b>Загальне співвідношення:</b>\n"
+            msg += f"┌{'─' * 25}┐\n"
+            msg += f"│ 💡 Світло:      {percentage_with}%\n"
+            msg += f"│ 🌑 Відключення: {100-percentage_with}%\n"
+            msg += f"└{'─' * 25}┘\n"
         
         return msg
     
@@ -328,7 +348,6 @@ class PowerScheduleBot:
     def run(self):
         now = self.get_kyiv_time()
         logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
-        logger.info("Статистика: тільки 14.02.2026")
         
         application = Application.builder().token(self.bot_token).build()
         
