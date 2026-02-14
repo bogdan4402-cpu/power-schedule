@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з таймером світла"""
+"""Telegram бот з таймером світла та виправленим графіком"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -14,6 +14,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
+# Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         
+        # Приклад розкладу (можна замінити на актуальні дані)
         self.schedules = {
             "2026-02-14": [
                 (0, 0, True),
@@ -104,7 +106,7 @@ class PowerScheduleBot:
         keyboard = [
             [KeyboardButton("⚡ Зараз є світло?")],
             [KeyboardButton("📅 Повний графік"), KeyboardButton("📊 Статистика")],
-            [KeyboardButton("⏱️ Таймер світла (Ще в розробці, невірно показує інформацію)")],
+            [KeyboardButton("⏱️ Таймер світла")],
             [KeyboardButton("🌐 Відкрити сайт")],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -211,7 +213,7 @@ class PowerScheduleBot:
         return None
     
     def format_timer_message(self):
-        """НОВИЙ пункт - таймер світла"""
+        """Таймер світла"""
         now = self.get_kyiv_time()
         current = self.get_current_status()
         
@@ -389,8 +391,7 @@ class PowerScheduleBot:
     
     def generate_stats_image(self):
         stats = self.load_stats()
-        now = self.get_kyiv_time()
-
+        
         if not stats:
             return None
 
@@ -403,8 +404,6 @@ class PowerScheduleBot:
         fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
         ax.set_facecolor('white')
 
-       # ... (початок функції generate_stats_image без змін) ...
-
         if num_days > 1:
             first_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             last_date = datetime.strptime(sorted_dates[-1], '%Y-%m-%d')
@@ -413,21 +412,68 @@ class PowerScheduleBot:
             date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
 
-        # ВИПРАВЛЕННЯ 1: pad=5 замість 20
+        # === ЗМІНА: Зменшено pad з 20 до 5 ===
         ax.set_title(title, fontsize=17, color='#AAAAAA', pad=5)
 
         for idx, date_str in enumerate(sorted_dates):
-            # ... (цикл малювання ячейок без змін) ...
-            # ... (тексти годин без змін) ...
+            data = stats[date_str]
+            hours_with = data['hours_with_power']
+            hours_without = data['hours_without_power']
+
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+            day_short = {
+                'Mon': 'ПН', 'Tue': 'ВТ', 'Wed': 'СР',
+                'Thu': 'ЧТ', 'Fri': 'ПТ', 'Sat': 'СБ', 'Sun': 'НД'
+            }.get(date_obj.strftime('%a'), '')
+
+            y_pos = num_days - idx - 1
+
+            for seg in range(48):
+                hour_decimal = seg / 2
+                has_power = self.get_hour_status(hour_decimal, date_str)
+
+                if has_power is None:
+                    color = '#CCCCCC'
+                else:
+                    color = '#7BC043' if has_power else '#FF6B6B'
+
+                rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76,
+                                 facecolor=color, edgecolor='white', linewidth=2.0)
+                ax.add_patch(rect)
+
+            date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
+            ax.text(-1.4, y_pos, date_label, va='center', ha='right',
+                    fontsize=12, weight='bold', color='#333333')
+
+            h_with = int(hours_with)
+            h_without = int(hours_without)
+
+            ax.text(25.0, y_pos + 0.2, f"{h_with}год",
+                    va='center', ha='left',
+                    fontsize=11, color='#7BC043', weight='bold')
+
+            ax.text(25.0, y_pos - 0.2, f"{h_without}год",
+                    va='center', ha='left',
+                    fontsize=11, color='#FF6B6B')
 
         ax.set_xlim(-4.8, 28)
-        
-        # ВИПРАВЛЕННЯ 2: num_days - 0.4 замість num_days + 0.5
-        ax.set_ylim(-2.8, num_days - 0.4)
+        # === ЗМІНА: Межа графіка підтягнута до верхньої смужки ===
+        ax.set_ylim(-2.8, num_days - 0.5)
 
         ax.set_xticks(range(0, 25))
-        
-    # ... (решта функції без змін) ...
+        ax.set_xticklabels([str(i) for i in range(0, 25)],
+                           fontsize=10, color='#888888', weight='bold')
+        ax.set_yticks([])
+
+        for x in [0, 4, 8, 12, 16, 20, 24]:
+            ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8)
+
+        for x in range(1, 24):
+            if x not in [4, 8, 12, 16, 20]:
+                ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5)
+
+        for spine in ax.spines.values():
+            spine.set_visible(False)
 
         # =============================
         # ВЕРТИКАЛЬНА ЛЕГЕНДА ЗЛІВА
@@ -492,155 +538,6 @@ class PowerScheduleBot:
 
         return buf
 
-        
-        if not stats:
-            return None
-        
-        sorted_dates = sorted(stats.keys())
-        num_days = len(sorted_dates)
-        
-        fig_width = 16
-        fig_height = 7 + num_days * 1.1
-        
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
-        ax.set_facecolor('white')
-        
-        if num_days > 1:
-            first_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
-            last_date = datetime.strptime(sorted_dates[-1], '%Y-%m-%d')
-            title = f"Графік відключень світла {first_date.strftime('%d.%m')} - {last_date.strftime('%d.%m')}"
-        else:
-            date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
-            title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
-        
-        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20, weight='normal')
-        
-        for idx, date_str in enumerate(sorted_dates):
-            data = stats[date_str]
-            hours_with = data['hours_with_power']
-            hours_without = data['hours_without_power']
-            
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            day_short = {
-                'Mon': 'ПН', 'Tue': 'ВТ', 'Wed': 'СР', 
-                'Thu': 'ЧТ', 'Fri': 'ПТ', 'Sat': 'СБ', 'Sun': 'НД'
-            }.get(date_obj.strftime('%a'), '')
-            
-            y_pos = num_days - idx - 1
-            
-            if hours_with == 0 and hours_without == 0:
-                for seg in range(48):
-                    rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
-                                    facecolor='#CCCCCC', edgecolor='white', linewidth=1.5)
-                    ax.add_patch(rect)
-            else:
-                for seg in range(48):
-                    hour_decimal = seg / 2
-                    has_power = self.get_hour_status(hour_decimal, date_str)
-                    
-                    if has_power is None:
-                        color = '#CCCCCC'
-                    else:
-                        color = '#7BC043' if has_power else '#FF6B6B'
-                    
-                    rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
-                                    facecolor=color, edgecolor='white', linewidth=2.0)
-                    ax.add_patch(rect)
-            
-            date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
-            ax.text(-1.2, y_pos, date_label, va='center', ha='right', 
-                   fontsize=12, weight='bold', color='#333333')
-            
-            if hours_with == 0 and hours_without == 0:
-                ax.text(25.0, y_pos, "графіки відсутні", va='center', ha='left',
-                       fontsize=11, color='#999999', style='italic')
-            else:
-                h_with = int(hours_with)
-                m_with = int((hours_with % 1) * 60)
-                text_with = f"{h_with}год" if m_with == 0 else f"{h_with}год {m_with}хв"
-                
-                ax.text(25.0, y_pos + 0.2, text_with, va='center', ha='left',
-                       fontsize=11, color='#7BC043', weight='bold')
-                
-                h_without = int(hours_without)
-                m_without = int((hours_without % 1) * 60)
-                text_without = f"{h_without}год" if m_without == 0 else f"{h_without}год {m_without}хв"
-                
-                ax.text(25.0, y_pos - 0.2, text_without, va='center', ha='left',
-                       fontsize=11, color='#FF6B6B', weight='normal')
-        
-        ax.set_xlim(-1.8, 28)
-        ax.set_ylim(-3.5, num_days + 0.1)
-        
-        ax.set_xticks(range(0, 25))
-        ax.set_xticklabels([str(i) for i in range(0, 25)], 
-                          fontsize=10, color='#888888', weight='bold')
-        ax.set_yticks([])
-        
-        for x in [0, 4, 8, 12, 16, 20, 24]:
-            ax.axvline(x, color='#BBBBBB', linewidth=1.5, alpha=0.8, zorder=0)
-        
-        for x in range(1, 24):
-            if x not in [4, 8, 12, 16, 20]:
-                ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.5, zorder=0)
-        
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        
-        legend_y = -2.2
-        
-        rect_green = Rectangle((1, legend_y), 0.8, 0.35, 
-                               facecolor='#7BC043', edgecolor='none')
-        ax.add_patch(rect_green)
-        ax.text(2.0, legend_y + 0.175, 'Світло було', 
-               va='center', ha='left', fontsize=11, color='#666666')
-        
-        rect_red = Rectangle((8, legend_y), 0.8, 0.35,
-                             facecolor='#FF6B6B', edgecolor='none')
-        ax.add_patch(rect_red)
-        ax.text(9.0, legend_y + 0.175, 'Світла не було',
-               va='center', ha='left', fontsize=11, color='#666666')
-        
-        days_with_data = [d for d in stats.values() if d['hours_with_power'] > 0 or d['hours_without_power'] > 0]
-        
-        if len(days_with_data) > 1:
-            total_with = sum(d['hours_with_power'] for d in days_with_data)
-            total_without = sum(d['hours_without_power'] for d in days_with_data)
-            avg_with = total_with / len(days_with_data)
-            
-            tw_h, tw_m = int(total_with), int((total_with % 1) * 60)
-            two_h, two_m = int(total_without), int((total_without % 1) * 60)
-            aw_h, aw_m = int(avg_with), int((avg_with % 1) * 60)
-            
-            stats_y = legend_y - 0.65
-            
-            line1 = f"● Всього світло було: {tw_h}год"
-            if tw_m > 0:
-                line1 += f" {tw_m}хв"
-            
-            line2 = f"● Всього світла не було: {two_h}год"
-            if two_m > 0:
-                line2 += f" {two_m}хв"
-            
-            line3 = f"● В середньому світло було {aw_h}год"
-            if aw_m > 0:
-                line3 += f" {aw_m}хв"
-            line3 += " за добу"
-            
-            ax.text(1, stats_y, line1, fontsize=10, color='#666666', va='top')
-            ax.text(1, stats_y - 0.25, line2, fontsize=10, color='#666666', va='top')
-            ax.text(1, stats_y - 0.50, line3, fontsize=10, color='#666666', va='top')
-        
-        plt.tight_layout(pad=1.5)
-        
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
-                   facecolor='white', pad_inches=0.5)
-        buf.seek(0)
-        plt.close('all')
-        
-        return buf
-    
     def format_schedule_message(self, data):
         now = self.get_kyiv_time()
         
@@ -680,9 +577,9 @@ class PowerScheduleBot:
                 end_min = end_h * 60 + end_m if end != "00:00" else 24 * 60
                 
                 if start_min <= current_minutes < end_min:
-                    msg += f"👉 <b>{start}-{end}  {emoji} {status_text}</b>\n"
+                    msg += f"👉 <b>{start}-{end}   {emoji} {status_text}</b>\n"
                 else:
-                    msg += f"      {start}-{end}  {emoji} {status_text}\n"
+                    msg += f"      {start}-{end}   {emoji} {status_text}\n"
             
             stats_today = self.calculate_day_stats(today_periods)
             
@@ -703,7 +600,7 @@ class PowerScheduleBot:
                 emoji = "🟢" if has_power else "🔴"
                 status_text = "Є світло" if has_power else "Відключення"
                 
-                msg += f"      {start}-{end}  {emoji} {status_text}\n"
+                msg += f"      {start}-{end}   {emoji} {status_text}\n"
             
             stats_tomorrow = self.calculate_day_stats(tomorrow_periods)
             
@@ -802,52 +699,27 @@ class PowerScheduleBot:
     async def now_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = self.format_now_message()
         await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
-    
-    async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🎨 Генерую статистику...")
-        
-        image_buf = self.generate_stats_image()
-        
-        if image_buf:
-            await update.message.reply_photo(
-                photo=image_buf,
-                caption="📊 Графік відключень світла\nГрупа 3.1",
-                reply_markup=self.get_main_keyboard()
-            )
-        else:
-            await update.message.reply_text("❌ Статистики поки немає")
-    
-    async def timer_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        message = self.format_timer_message()
-        await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
-    
-    def run(self):
-        now = self.get_kyiv_time()
-        logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
-        
-        application = Application.builder().token(self.bot_token).build()
-        
-        application.add_handler(CommandHandler("start", self.start_command))
-        application.add_handler(CommandHandler("schedule", self.schedule_command))
-        application.add_handler(CommandHandler("now", self.now_command))
-        application.add_handler(CommandHandler("stats", self.stats_command))
-        application.add_handler(CommandHandler("timer", self.timer_command))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
-        
-        logger.info("Бот запущено!")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
+# --- ЗАПУСК БОТА ---
 
 def main():
-    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    # ВСТАВТЕ СЮДИ ВАШ ТОКЕН
+    TOKEN = "ВАШ_ТОКЕН_ТУТ"
     
-    if not bot_token:
-        logger.error("❌ Не знайдено TELEGRAM_BOT_TOKEN!")
-        return
+    bot = PowerScheduleBot(TOKEN)
     
-    bot = PowerScheduleBot(bot_token)
-    bot.run()
+    # Створення додатку
+    application = Application.builder().token(TOKEN).build()
+    
+    # Додавання обробників
+    application.add_handler(CommandHandler("start", bot.start_command))
+    application.add_handler(CommandHandler("now", bot.now_command))
+    application.add_handler(CommandHandler("schedule", bot.schedule_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
+    
+    # Запуск
+    print("Бот запущено...")
+    application.run_polling()
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
