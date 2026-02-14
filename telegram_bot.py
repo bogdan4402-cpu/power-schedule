@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з графіком максимально схожим на СвітлоБот"""
+"""Telegram бот з ЯКІСНИМ графіком"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -55,7 +55,7 @@ class PowerScheduleBot:
             with open(self.stats_file, 'w', encoding='utf-8') as f:
                 json.dump(stats, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"Помилка збереження статистики: {e}")
+            logger.error(f"Помилка: {e}")
     
     def get_main_keyboard(self):
         keyboard = [
@@ -141,7 +141,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Генерує графік ТОЧНО як СвітлоБот"""
+        """ЯКІСНИЙ графік як у СвітлоБот"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -151,11 +151,14 @@ class PowerScheduleBot:
         sorted_dates = sorted(stats.keys())
         num_days = len(sorted_dates)
         
-        # Білий фон, більша висота для легенди
-        fig = plt.figure(figsize=(15, 3.5 + num_days * 1.0), facecolor='white', dpi=120)
-        ax = fig.add_subplot(111, facecolor='white')
+        # Створюємо фігуру з ДОСТАТНІМ місцем для легенди
+        fig_width = 16
+        fig_height = 5 + num_days * 1.1  # Більше місця для легенди
         
-        # Заголовок сірим
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
+        ax.set_facecolor('white')
+        
+        # Заголовок
         if num_days > 1:
             first_date = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             last_date = datetime.strptime(sorted_dates[-1], '%Y-%m-%d')
@@ -164,10 +167,9 @@ class PowerScheduleBot:
             date_obj = datetime.strptime(sorted_dates[0], '%Y-%m-%d')
             title = f"Графік відключень світла {date_obj.strftime('%d.%m.%Y')}"
         
-        plt.text(0.5, 0.97, title, transform=fig.transFigure, ha='center', 
-                fontsize=16, color='#AAAAAA', weight='normal')
+        ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20, weight='normal', loc='center')
         
-        # Малюємо дні
+        # Малюємо кожен день
         for idx, date_str in enumerate(sorted_dates):
             data = stats[date_str]
             hours_with = data['hours_with_power']
@@ -177,70 +179,71 @@ class PowerScheduleBot:
             day_short = {
                 'Mon': 'ПН', 'Tue': 'ВТ', 'Wed': 'СР', 
                 'Thu': 'ЧТ', 'Fri': 'ПТ', 'Sat': 'СБ', 'Sun': 'НД'
-            }.get(date_obj.strftime('%a'), date_obj.strftime('%a'))
+            }.get(date_obj.strftime('%a'), '')
             
             y_pos = num_days - idx - 1
             
-            # 48 сегментів (кожні 30 хвилин)
+            # Малюємо 48 сегментів (кожні 30 хв)
             for seg in range(48):
-                hour_dec = seg / 2
-                has_power = self.get_hour_status(hour_dec)
+                hour_decimal = seg / 2
+                has_power = self.get_hour_status(hour_decimal)
                 
+                # Кольори як у СвітлоБот
                 color = '#7BC043' if has_power else '#FF6B6B'
                 
-                rect = Rectangle((seg/2, y_pos - 0.35), 0.5, 0.7, 
-                                facecolor=color, edgecolor='white', linewidth=1)
+                rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
+                                facecolor=color, edgecolor='white', linewidth=1.2)
                 ax.add_patch(rect)
             
-            # Дата зліва чорним жирним
-            ax.text(-1.0, y_pos, f"{day_short} ({date_obj.strftime('%d.%m')})", 
-                   va='center', ha='right', fontsize=11, weight='bold', color='#333333')
+            # Лейбл дати зліва
+            date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
+            ax.text(-1.2, y_pos, date_label, va='center', ha='right', 
+                   fontsize=12, weight='bold', color='#333333')
             
             # Статистика справа ЗЕЛЕНИМ
             h_int = int(hours_with)
             m_int = int((hours_with % 1) * 60)
-            text_green = f"{h_int}год {m_int}хв" if m_int > 0 else f"{h_int}год"
+            text_with = f"{h_int}год" if m_int == 0 else f"{h_int}год {m_int}хв"
             
-            # Текст зі світлом справа зверху
-            ax.text(24.8, y_pos, text_green, va='center', ha='left',
-                   fontsize=11, color='#7BC043', weight='bold')
+            ax.text(25.0, y_pos, text_with, va='center', ha='left',
+                   fontsize=12, color='#7BC043', weight='bold')
         
-        # Осі
-        ax.set_xlim(-1.5, 27)
-        ax.set_ylim(-1.5, num_days + 0.1)
+        # Налаштування осей
+        ax.set_xlim(-1.8, 28)
+        ax.set_ylim(-2.2, num_days + 0.1)
         
-        # Цифри годин знизу
+        # Години знизу
         ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
         ax.set_xticklabels(['0', '4', '8', '12', '16', '20', '24'], 
-                          fontsize=10, color='#BBBBBB')
+                          fontsize=11, color='#BBBBBB')
         ax.set_yticks([])
         
-        # Вертикальні лінії сітки
+        # Вертикальні лінії
         for x in [0, 4, 8, 12, 16, 20, 24]:
-            ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.6)
+            ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.7, zorder=0)
         
         # Прибираємо рамки
-        for spine in ['top', 'right', 'left', 'bottom']:
-            ax.spines[spine].set_visible(False)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
         
-        # ЛЕГЕНДА ВНИЗУ (як у СвітлоБот)
-        legend_y = -1.0
+        # ======= ЛЕГЕНДА ВНИЗУ =======
+        legend_y = -1.2
         
         # Зелений квадрат
-        r1 = Rectangle((0.5, legend_y), 1.5, 0.4, facecolor='#7BC043', 
-                      edgecolor='none', transform=ax.transData)
-        ax.add_patch(r1)
-        ax.text(2.3, legend_y + 0.2, 'Світло було', va='center', ha='left',
-               fontsize=10, color='#666666')
+        rect_green = Rectangle((1, legend_y), 1.8, 0.45, 
+                               facecolor='#7BC043', edgecolor='none')
+        ax.add_patch(rect_green)
+        ax.text(3.1, legend_y + 0.225, 'Світло було', 
+               va='center', ha='left', fontsize=11, color='#666666')
         
         # Червоний квадрат
-        r2 = Rectangle((8, legend_y), 1.5, 0.4, facecolor='#FF6B6B',
-                      edgecolor='none', transform=ax.transData)
-        ax.add_patch(r2)
-        ax.text(9.8, legend_y + 0.2, 'Світла не було', va='center', ha='left',
-               fontsize=10, color='#666666')
+        rect_red = Rectangle((10, legend_y), 1.8, 0.45,
+                             facecolor='#FF6B6B', edgecolor='none')
+        ax.add_patch(rect_red)
+        ax.text(12.1, legend_y + 0.225, 'Світла не було',
+               va='center', ha='left', fontsize=11, color='#666666')
         
-        # Статистика ще нижче
+        # Статистика (якщо більше 1 дня)
         if num_days > 1:
             total_with = sum(d['hours_with_power'] for d in stats.values())
             total_without = sum(d['hours_without_power'] for d in stats.values())
@@ -250,21 +253,34 @@ class PowerScheduleBot:
             two_h, two_m = int(total_without), int((total_without % 1) * 60)
             aw_h, aw_m = int(avg_with), int((avg_with % 1) * 60)
             
-            stats_y = legend_y - 0.5
-            ax.text(0.5, stats_y, f"● Всього світло було: {tw_h}год {tw_m}хв", 
-                   fontsize=9, color='#666666', va='top')
-            ax.text(0.5, stats_y - 0.2, f"● Всього світла не було: {two_h}год {two_m}хв",
-                   fontsize=9, color='#666666', va='top')
-            ax.text(0.5, stats_y - 0.4, f"● В середньому світло було {aw_h}год {aw_m}хв за добу",
-                   fontsize=9, color='#666666', va='top')
+            stats_y = legend_y - 0.65
+            
+            line1 = f"● Всього світло було: {tw_h}год"
+            if tw_m > 0:
+                line1 += f" {tw_m}хв"
+            
+            line2 = f"● Всього світла не було: {two_h}год"
+            if two_m > 0:
+                line2 += f" {two_m}хв"
+            
+            line3 = f"● В середньому світло було {aw_h}год"
+            if aw_m > 0:
+                line3 += f" {aw_m}хв"
+            line3 += " за добу"
+            
+            ax.text(1, stats_y, line1, fontsize=10, color='#666666', va='top')
+            ax.text(1, stats_y - 0.25, line2, fontsize=10, color='#666666', va='top')
+            ax.text(1, stats_y - 0.50, line3, fontsize=10, color='#666666', va='top')
         
-        plt.subplots_adjust(left=0.08, right=0.95, top=0.93, bottom=0.15)
+        # Фіксуємо margins щоб легенда не обрізалась
+        plt.tight_layout(pad=1.5)
         
+        # Зберігаємо
         buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=150, bbox_inches=None, 
-                   facecolor='white', edgecolor='none')
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
+                   facecolor='white', pad_inches=0.4)
         buf.seek(0)
-        plt.close()
+        plt.close('all')
         
         return buf
     
