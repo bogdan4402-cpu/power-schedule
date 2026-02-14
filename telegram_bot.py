@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з виправленою легендою"""
+"""Telegram бот з графіком"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -25,20 +25,31 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         
+        # ========================================
+        # 📌 ТУТ МІНЯТИ ГРАФІК!
+        # Формат: (година, хвилина, є_світло)
+        # ========================================
         self.schedule_31 = [
-            (0, 0, True),
-            (6, 30, False),
-            (9, 30, True),
+            (0, 0, True),      # 00:00 - світло
+            (6, 30, False),    # 06:30 - відключення  
+            (9, 30, True),     # 09:30 - світло до кінця доби
         ]
         
         self.init_stats()
     
     def init_stats(self):
         if not os.path.exists(self.stats_file):
+            # ========================================
+            # 📌 ТУТ ДОДАВАТИ Нові ДНІ!
+            # ========================================
             stats = {
                 "2026-02-14": {
-                    'hours_with_power': 21.0,
-                    'hours_without_power': 3.0,
+                    'hours_with_power': 21.0,    # Години зі світлом
+                    'hours_without_power': 3.0,  # Години без світла
+                },
+                "2026-02-15": {
+                    'hours_with_power': 0.0,     # 0 = графіки відсутні
+                    'hours_without_power': 0.0,  # 0 = графіки відсутні
                 }
             }
             self.save_stats(stats)
@@ -141,7 +152,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Графік з МАЛЕНЬКИМИ квадратиками в легенді"""
+        """Графік з можливістю показати 'графіки відсутні'"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -182,15 +193,23 @@ class PowerScheduleBot:
             
             y_pos = num_days - idx - 1
             
-            # 48 сегментів
-            for seg in range(48):
-                hour_decimal = seg / 2
-                has_power = self.get_hour_status(hour_decimal)
-                color = '#7BC043' if has_power else '#FF6B6B'
-                
-                rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
-                                facecolor=color, edgecolor='white', linewidth=1.2)
-                ax.add_patch(rect)
+            # Перевірка: чи є графік
+            if hours_with == 0 and hours_without == 0:
+                # ГРАФІКИ ВІДСУТНІ - малюємо сірим
+                for seg in range(48):
+                    rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
+                                    facecolor='#CCCCCC', edgecolor='white', linewidth=1.2)
+                    ax.add_patch(rect)
+            else:
+                # Є графік - малюємо нормально
+                for seg in range(48):
+                    hour_decimal = seg / 2
+                    has_power = self.get_hour_status(hour_decimal)
+                    color = '#7BC043' if has_power else '#FF6B6B'
+                    
+                    rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
+                                    facecolor=color, edgecolor='white', linewidth=1.2)
+                    ax.add_patch(rect)
             
             # Дата зліва
             date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
@@ -198,21 +217,25 @@ class PowerScheduleBot:
                    fontsize=12, weight='bold', color='#333333')
             
             # Статистика справа
-            h_with = int(hours_with)
-            m_with = int((hours_with % 1) * 60)
-            text_with = f"{h_with}год" if m_with == 0 else f"{h_with}год {m_with}хв"
-            
-            # ЗЕЛЕНИЙ текст зверху
-            ax.text(25.0, y_pos + 0.2, text_with, va='center', ha='left',
-                   fontsize=11, color='#7BC043', weight='bold')
-            
-            # ЧЕРВОНИЙ текст внизу
-            h_without = int(hours_without)
-            m_without = int((hours_without % 1) * 60)
-            text_without = f"{h_without}год" if m_without == 0 else f"{h_without}год {m_without}хв"
-            
-            ax.text(25.0, y_pos - 0.2, text_without, va='center', ha='left',
-                   fontsize=11, color='#FF6B6B', weight='normal')
+            if hours_with == 0 and hours_without == 0:
+                # ГРАФІКИ ВІДСУТНІ
+                ax.text(25.0, y_pos, "графіки відсутні", va='center', ha='left',
+                       fontsize=11, color='#999999', style='italic')
+            else:
+                # Є графік
+                h_with = int(hours_with)
+                m_with = int((hours_with % 1) * 60)
+                text_with = f"{h_with}год" if m_with == 0 else f"{h_with}год {m_with}хв"
+                
+                ax.text(25.0, y_pos + 0.2, text_with, va='center', ha='left',
+                       fontsize=11, color='#7BC043', weight='bold')
+                
+                h_without = int(hours_without)
+                m_without = int((hours_without % 1) * 60)
+                text_without = f"{h_without}год" if m_without == 0 else f"{h_without}год {m_without}хв"
+                
+                ax.text(25.0, y_pos - 0.2, text_without, va='center', ha='left',
+                       fontsize=11, color='#FF6B6B', weight='normal')
         
         # Осі
         ax.set_xlim(-1.8, 28)
@@ -230,17 +253,15 @@ class PowerScheduleBot:
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # ======= ЛЕГЕНДА З МАЛЕНЬКИМИ КВАДРАТИКАМИ =======
+        # Легенда
         legend_y = -1.2
         
-        # МАЛЕНЬКИЙ зелений квадрат (0.8 x 0.35 замість 1.8 x 0.45)
         rect_green = Rectangle((1, legend_y), 0.8, 0.35, 
                                facecolor='#7BC043', edgecolor='none')
         ax.add_patch(rect_green)
         ax.text(2.0, legend_y + 0.175, 'Світло було', 
                va='center', ha='left', fontsize=11, color='#666666')
         
-        # МАЛЕНЬКИЙ червоний квадрат
         rect_red = Rectangle((8, legend_y), 0.8, 0.35,
                              facecolor='#FF6B6B', edgecolor='none')
         ax.add_patch(rect_red)
@@ -248,10 +269,13 @@ class PowerScheduleBot:
                va='center', ha='left', fontsize=11, color='#666666')
         
         # Статистика
-        if num_days > 1:
-            total_with = sum(d['hours_with_power'] for d in stats.values())
-            total_without = sum(d['hours_without_power'] for d in stats.values())
-            avg_with = total_with / num_days
+        # Рахуємо тільки дні де є графік
+        days_with_data = [d for d in stats.values() if d['hours_with_power'] > 0 or d['hours_without_power'] > 0]
+        
+        if len(days_with_data) > 1:
+            total_with = sum(d['hours_with_power'] for d in days_with_data)
+            total_without = sum(d['hours_without_power'] for d in days_with_data)
+            avg_with = total_with / len(days_with_data)
             
             tw_h, tw_m = int(total_with), int((total_with % 1) * 60)
             two_h, two_m = int(total_without), int((total_without % 1) * 60)
