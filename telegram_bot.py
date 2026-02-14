@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з багатоденним графіком"""
+"""Telegram бот - ВИПРАВЛЕНИЙ"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -25,25 +25,19 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         
-        # ========================================
-        # 📌 ГРАФІКИ ДЛЯ КОЖНОГО ДНЯ ОКРЕМО!
-        # Формат: "YYYY-MM-DD": [(година, хвилина, є_світло), ...]
-        # ========================================
         self.schedules = {
             "2026-02-14": [
-                (0, 0, True),      # 00:00 - світло
-                (6, 30, False),    # 06:30 - відключення  
-                (9, 30, True),     # 09:30 - світло до кінця
+                (0, 0, True),
+                (6, 30, False),
+                (9, 30, True),
             ],
             "2026-02-15": [
-                (0, 0, True),      # 00:00 - світло
-                (10, 30, False),   # 10:30 - відключення
-                (13, 0, True),     # 13:00 - світло
-                (17, 30, False),   # 17:30 - відключення
-                (20, 0, True),     # 20:00 - світло до кінця
+                (0, 0, True),
+                (10, 30, False),
+                (13, 0, True),
+                (17, 30, False),
+                (20, 0, True),
             ],
-            # Додавайте нові дні тут:
-            # "2026-02-16": [(0, 0, True), (8, 0, False), (12, 0, True)],
         }
         
         self.init_stats()
@@ -88,11 +82,9 @@ class PowerScheduleBot:
         return datetime.now(KYIV_TZ)
     
     def get_schedule_for_date(self, date_str):
-        """Отримує графік для конкретної дати"""
         if date_str in self.schedules:
             return self.schedules[date_str]
         else:
-            # Якщо графіка немає - повертаємо None
             return None
     
     def get_current_status(self):
@@ -139,49 +131,70 @@ class PowerScheduleBot:
         return periods[0]
     
     def get_full_schedule(self):
+        """ПОКАЗУЄ ГРАФІК НА СЬОГОДНІ І ЗАВТРА"""
         now = self.get_kyiv_time()
         today_str = now.strftime('%Y-%m-%d')
         
-        # Показуємо графік на СЬОГОДНІ
-        schedule = self.get_schedule_for_date(today_str)
+        # Графік на СЬОГОДНІ
+        schedule_today = self.get_schedule_for_date(today_str)
         
-        if not schedule:
-            return {
-                'timestamp': now.isoformat(),
-                'group': '3.1',
-                'date': today_str,
-                'periods': []
-            }
+        # Графік на ЗАВТРА
+        tomorrow = now + timedelta(days=1)
+        tomorrow_str = tomorrow.strftime('%Y-%m-%d')
+        schedule_tomorrow = self.get_schedule_for_date(tomorrow_str)
         
-        schedule_data = {
+        result = {
             'timestamp': now.isoformat(),
             'group': '3.1',
-            'date': today_str,
-            'periods': []
+            'today': {
+                'date': today_str,
+                'periods': []
+            },
+            'tomorrow': {
+                'date': tomorrow_str,
+                'periods': []
+            }
         }
         
-        for i, (h, m, status) in enumerate(schedule):
-            if i + 1 < len(schedule):
-                next_h, next_m, _ = schedule[i + 1]
-                end_time = f"{next_h:02d}:{next_m:02d}"
-            else:
-                end_time = "00:00"
-            
-            schedule_data['periods'].append({
-                'start': f"{h:02d}:{m:02d}",
-                'end': end_time,
-                'status': 'Є світло' if status else 'Відключення',
-                'has_power': status
-            })
+        # Сьогоднішній графік
+        if schedule_today:
+            for i, (h, m, status) in enumerate(schedule_today):
+                if i + 1 < len(schedule_today):
+                    next_h, next_m, _ = schedule_today[i + 1]
+                    end_time = f"{next_h:02d}:{next_m:02d}"
+                else:
+                    end_time = "00:00"
+                
+                result['today']['periods'].append({
+                    'start': f"{h:02d}:{m:02d}",
+                    'end': end_time,
+                    'status': 'Є світло' if status else 'Відключення',
+                    'has_power': status
+                })
         
-        return schedule_data
+        # Завтрашній графік
+        if schedule_tomorrow:
+            for i, (h, m, status) in enumerate(schedule_tomorrow):
+                if i + 1 < len(schedule_tomorrow):
+                    next_h, next_m, _ = schedule_tomorrow[i + 1]
+                    end_time = f"{next_h:02d}:{next_m:02d}"
+                else:
+                    end_time = "00:00"
+                
+                result['tomorrow']['periods'].append({
+                    'start': f"{h:02d}:{m:02d}",
+                    'end': end_time,
+                    'status': 'Є світло' if status else 'Відключення',
+                    'has_power': status
+                })
+        
+        return result
     
     def get_hour_status(self, hour_decimal, date_str):
-        """Визначає статус для конкретної години конкретного дня"""
         schedule = self.get_schedule_for_date(date_str)
         
         if not schedule:
-            return None  # Графіка немає
+            return None
         
         current_minutes = hour_decimal * 60
         
@@ -200,7 +213,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Генерує графік на 5+ днів"""
+        """Генерує графік з ЧІТКИМИ лініями"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -227,7 +240,7 @@ class PowerScheduleBot:
         
         ax.set_title(title, fontsize=17, color='#AAAAAA', pad=20, weight='normal')
         
-        # Малюємо кожен день
+        # Малюємо дні
         for idx, date_str in enumerate(sorted_dates):
             data = stats[date_str]
             hours_with = data['hours_with_power']
@@ -241,34 +254,32 @@ class PowerScheduleBot:
             
             y_pos = num_days - idx - 1
             
-            # Перевірка: чи є графік для цього дня
             if hours_with == 0 and hours_without == 0:
-                # ГРАФІКИ ВІДСУТНІ
                 for seg in range(48):
                     rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
-                                    facecolor='#CCCCCC', edgecolor='white', linewidth=1.2)
+                                    facecolor='#CCCCCC', edgecolor='white', linewidth=1.5)
                     ax.add_patch(rect)
             else:
-                # Малюємо графік для цього конкретного дня
                 for seg in range(48):
                     hour_decimal = seg / 2
                     has_power = self.get_hour_status(hour_decimal, date_str)
                     
                     if has_power is None:
-                        color = '#CCCCCC'  # Сірий якщо немає графіка
+                        color = '#CCCCCC'
                     else:
                         color = '#7BC043' if has_power else '#FF6B6B'
                     
+                    # ТОВЩІ БІЛІ ЛІНІЇ між блоками
                     rect = Rectangle((seg/2, y_pos - 0.38), 0.5, 0.76, 
-                                    facecolor=color, edgecolor='white', linewidth=1.2)
+                                    facecolor=color, edgecolor='white', linewidth=2.0)
                     ax.add_patch(rect)
             
-            # Дата зліва
+            # Дата
             date_label = f"{day_short} ({date_obj.strftime('%d.%m')})"
             ax.text(-1.2, y_pos, date_label, va='center', ha='right', 
                    fontsize=12, weight='bold', color='#333333')
             
-            # Статистика справа
+            # Статистика
             if hours_with == 0 and hours_without == 0:
                 ax.text(25.0, y_pos, "графіки відсутні", va='center', ha='left',
                        fontsize=11, color='#999999', style='italic')
@@ -293,11 +304,12 @@ class PowerScheduleBot:
         
         ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
         ax.set_xticklabels(['0', '4', '8', '12', '16', '20', '24'], 
-                          fontsize=11, color='#BBBBBB')
+                          fontsize=12, color='#888888', weight='bold')
         ax.set_yticks([])
         
+        # ТОВЩІ вертикальні лінії
         for x in [0, 4, 8, 12, 16, 20, 24]:
-            ax.axvline(x, color='#DDDDDD', linewidth=0.8, alpha=0.7, zorder=0)
+            ax.axvline(x, color='#CCCCCC', linewidth=1.5, alpha=0.8, zorder=0)
         
         for spine in ax.spines.values():
             spine.set_visible(False)
@@ -359,17 +371,11 @@ class PowerScheduleBot:
         return buf
     
     def format_schedule_message(self, data):
-        periods = data.get('periods', [])
+        """ПОКАЗУЄ ГРАФІК НА СЬОГОДНІ І ЗАВТРА"""
         now = self.get_kyiv_time()
-        date_str = data.get('date', now.strftime('%Y-%m-%d'))
         
-        # ПРИБРАНО "(Київ)"
         msg = f"⚡️ <b>Графік відключень - Група 3.1</b>\n"
         msg += f"🕐 {now.strftime('%d.%m.%Y %H:%M')}\n\n"
-        
-        if not periods:
-            msg += "❌ Графік відсутній\n"
-            return msg
         
         current = self.get_current_status()
         
@@ -383,48 +389,57 @@ class PowerScheduleBot:
             msg += f"До {current['end_time']}\n\n"
         
         msg += "─" * 35 + "\n\n"
-        msg += "<b>📅 Повний графік:</b>\n\n"
         
-        current_minutes = now.hour * 60 + now.minute
+        # СЬОГОДНІ
+        today_periods = data['today']['periods']
+        if today_periods:
+            msg += "<b>📅 Повний графік:</b>\n\n"
+            
+            current_minutes = now.hour * 60 + now.minute
+            
+            for period in today_periods:
+                start = period['start']
+                end = period['end']
+                has_power = period['has_power']
+                
+                emoji = "🟢" if has_power else "🔴"
+                status_text = "Є світло" if has_power else "Відключення"
+                
+                start_h, start_m = map(int, start.split(':'))
+                end_h, end_m = map(int, end.split(':'))
+                start_min = start_h * 60 + start_m
+                end_min = end_h * 60 + end_m if end != "00:00" else 24 * 60
+                
+                if start_min <= current_minutes < end_min:
+                    msg += f"👉 <b>{start}-{end}  {emoji} {status_text}</b>\n"
+                else:
+                    msg += f"      {start}-{end}  {emoji} {status_text}\n"
+            
+            # Статистика сьогодні
+            total_with = sum((int(p['end'].split(':')[0]) * 60 + int(p['end'].split(':')[1]) if p['end'] != "00:00" else 1440) - 
+                           (int(p['start'].split(':')[0]) * 60 + int(p['start'].split(':')[1])) 
+                           for p in today_periods if p['has_power'])
+            total_without = 1440 - total_with
+            
+            msg += f"\n📊 <b>Статистика:</b>\n"
+            msg += f"🟢 Зі світлом: {total_with/60:.1f} год\n"
+            msg += f"🔴 Без світла: {total_without/60:.1f} год\n"
         
-        for period in periods:
-            start = period['start']
-            end = period['end']
-            has_power = period['has_power']
+        # ЗАВТРА
+        tomorrow_periods = data['tomorrow']['periods']
+        if tomorrow_periods:
+            tomorrow_date = datetime.strptime(data['tomorrow']['date'], '%Y-%m-%d')
+            msg += f"\n\n👉 <b>Графік на завтра ({tomorrow_date.strftime('%d.%m')}):</b>\n\n"
             
-            emoji = "🟢" if has_power else "🔴"
-            status_text = "Є світло" if has_power else "Відключення"
-            
-            start_h, start_m = map(int, start.split(':'))
-            end_h, end_m = map(int, end.split(':'))
-            start_min = start_h * 60 + start_m
-            end_min = end_h * 60 + end_m if end != "00:00" else 24 * 60
-            
-            if start_min <= current_minutes < end_min:
-                msg += f"👉 <b>{start}-{end}  {emoji} {status_text}</b>\n"
-            else:
+            for period in tomorrow_periods:
+                start = period['start']
+                end = period['end']
+                has_power = period['has_power']
+                
+                emoji = "🟢" if has_power else "🔴"
+                status_text = "Є світло" if has_power else "Відключення"
+                
                 msg += f"      {start}-{end}  {emoji} {status_text}\n"
-        
-        total_with_light = 0
-        for i, period in enumerate(periods):
-            start_h, start_m = map(int, period['start'].split(':'))
-            if i + 1 < len(periods):
-                end_h, end_m = map(int, period['end'].split(':'))
-            else:
-                end_h, end_m = 0, 0
-            
-            start_min = start_h * 60 + start_m
-            end_min = end_h * 60 + end_m if period['end'] != "00:00" else 24 * 60
-            duration = end_min - start_min
-            
-            if period['has_power']:
-                total_with_light += duration
-        
-        total_without_light = 24 * 60 - total_with_light
-        
-        msg += f"\n📊 <b>Статистика:</b>\n"
-        msg += f"🟢 Зі світлом: {total_with_light/60:.1f} год\n"
-        msg += f"🔴 Без світла: {total_without_light/60:.1f} год\n"
         
         msg += f"\n⚠️ Графіки можуть змінюватись!"
         
@@ -445,7 +460,7 @@ class PowerScheduleBot:
             status = "ВІДКЛЮЧЕННЯ"
         
         msg = f"{emoji}\n\n"
-        msg = f"<b>ЗАРАЗ ({now.strftime('%H:%M')}):</b>\n"
+        msg += f"<b>ЗАРАЗ ({now.strftime('%H:%M')}):</b>\n"
         msg += f"<b>{status}</b>\n\n"
         
         if current['status'] is not None:
