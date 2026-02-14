@@ -21,7 +21,7 @@ class PowerScheduleBot:
         self.schedule_31 = [
             (0, 0, True),
             (6, 30, False),
-            (9, 30, True),
+            (9, 00, True),
             (13, 30, False),
             (19, 30, True),
         ]
