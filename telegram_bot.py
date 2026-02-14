@@ -30,6 +30,7 @@ class PowerScheduleBot:
             (6, 30,False),
             (6, 30,True),
             (9, 30,False),
+            (9, 30,True),
         ]
         
         self.init_stats()
