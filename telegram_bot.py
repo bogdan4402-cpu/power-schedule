@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот з красивим графіком у стилі СвітлоБот (тільки план)"""
+"""Telegram бот з красивим графіком у стилі СвітлоБот"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -25,14 +25,14 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         
-        # Графік для групи 3.1
-        # (година, хвилина, є_світло)
+        # ВИПРАВЛЕНИЙ графік для групи 3.1
+        # 00:00-06:30 світло
+        # 06:30-09:30 відключення
+        # 09:30-00:00 світло
         self.schedule_31 = [
-            (0, 0, True),
-            (6, 30, False),
-            (9, 0, True),
-            (13, 30, False),
-            (19, 30, True),
+            (0, 0, True),      # 00:00 - світло
+            (6, 30, False),    # 06:30 - відключення
+            (9, 30, True),     # 09:30 - світло до кінця доби
         ]
         
         self.init_stats()
@@ -41,8 +41,8 @@ class PowerScheduleBot:
         if not os.path.exists(self.stats_file):
             stats = {
                 "2026-02-14": {
-                    'hours_with_power': 15.5,
-                    'hours_without_power': 8.5,
+                    'hours_with_power': 21.0,  # 6.5 + 14.5 = 21 година
+                    'hours_without_power': 3.0,  # 3 години
                 }
             }
             self.save_stats(stats)
@@ -128,7 +128,7 @@ class PowerScheduleBot:
         return schedule_data
     
     def get_hour_status(self, hour_decimal):
-        """Визначає чи є світло в конкретну годину (десяткова, наприклад 6.5 = 06:30)"""
+        """Визначає чи є світло в конкретну годину"""
         current_minutes = hour_decimal * 60
         
         for i, (h, m, status) in enumerate(self.schedule_31):
@@ -146,7 +146,7 @@ class PowerScheduleBot:
         return True
     
     def generate_stats_image(self):
-        """Генерує графік у стилі СвітлоБот"""
+        """Генерує графік у стилі СвітлоБот З ЛЕГЕНДОЮ"""
         stats = self.load_stats()
         now = self.get_kyiv_time()
         
@@ -156,8 +156,8 @@ class PowerScheduleBot:
         sorted_dates = sorted(stats.keys())
         num_days = len(sorted_dates)
         
-        # Створюємо фігуру
-        fig_height = 3 + num_days * 1.2
+        # Створюємо фігуру (більше місця для легенди)
+        fig_height = 4 + num_days * 1.2
         fig = plt.figure(figsize=(16, fig_height), facecolor='white')
         ax = fig.add_subplot(111)
         ax.set_facecolor('white')
@@ -189,10 +189,9 @@ class PowerScheduleBot:
             
             y_pos = num_days - idx - 1
             
-            # Малюємо 24-годинну шкалу
-            for segment in range(48):  # 48 півгодинних сегментів
+            # Малюємо 24-годинну шкалу (48 півгодинних сегментів)
+            for segment in range(48):
                 hour_start = segment / 2
-                hour_end = (segment + 1) / 2
                 
                 # Визначаємо колір
                 has_power = self.get_hour_status(hour_start)
@@ -211,7 +210,7 @@ class PowerScheduleBot:
             ax.text(-0.8, y_pos, date_label, va='center', ha='right', 
                    fontsize=12, fontweight='bold', color='#333')
             
-            # Статистика справа (зеленим як у СвітлоБот)
+            # Статистика справа
             hours_int = int(hours_with)
             mins_int = int((hours_with % 1) * 60)
             hours_text = f"{hours_int}год {mins_int}хв"
@@ -228,9 +227,9 @@ class PowerScheduleBot:
         
         # Налаштування осей
         ax.set_xlim(-1.5, 28)
-        ax.set_ylim(-1.2, num_days + 0.3)
+        ax.set_ylim(-2.0, num_days + 0.3)
         
-        # Мітки по горизонталі (години)
+        # Мітки по горизонталі
         ax.set_xticks([0, 4, 8, 12, 16, 20, 24])
         ax.set_xticklabels(['0', '4', '8', '12', '16', '20', '24'], 
                           fontsize=11, color='#999')
@@ -247,26 +246,26 @@ class PowerScheduleBot:
         ax.spines['bottom'].set_color('#E0E0E0')
         ax.spines['bottom'].set_linewidth(0.5)
         
-        # Легенда
-        legend_y = -0.7
+        # ЛЕГЕНДА (нижче графіка)
+        legend_y = -0.9
         
         # Зелений квадратик
-        rect1 = Rectangle((1, legend_y), 1, 0.3, facecolor='#7BC043', edgecolor='none')
+        rect1 = Rectangle((1, legend_y), 1.2, 0.35, facecolor='#7BC043', edgecolor='none')
         ax.add_patch(rect1)
-        ax.text(2.3, legend_y + 0.15, 'Світло було', va='center', fontsize=10, color='#666')
+        ax.text(2.5, legend_y + 0.175, 'Світло було', va='center', fontsize=11, color='#666')
         
         # Червоний квадратик
-        rect2 = Rectangle((7, legend_y), 1, 0.3, facecolor='#FF6B6B', edgecolor='none')
+        rect2 = Rectangle((8, legend_y), 1.2, 0.35, facecolor='#FF6B6B', edgecolor='none')
         ax.add_patch(rect2)
-        ax.text(8.3, legend_y + 0.15, 'Світла не було', va='center', fontsize=10, color='#666')
+        ax.text(9.5, legend_y + 0.175, 'Світла не було', va='center', fontsize=11, color='#666')
         
-        # Загальна статистика внизу
+        # Загальна статистика
         if num_days > 1:
             total_with = sum(d['hours_with_power'] for d in stats.values())
             total_without = sum(d['hours_without_power'] for d in stats.values())
             avg_with = total_with / num_days
             
-            stats_y = legend_y - 0.5
+            stats_y = legend_y - 0.6
             
             total_with_h = int(total_with)
             total_with_m = int((total_with % 1) * 60)
@@ -279,9 +278,9 @@ class PowerScheduleBot:
             
             ax.text(1, stats_y, f"● Всього світло було: {total_with_h}год {total_with_m}хв", 
                    fontsize=10, color='#666', va='top')
-            ax.text(1, stats_y - 0.15, f"● Всього світла не було: {total_without_h}год {total_without_m}хв",
+            ax.text(1, stats_y - 0.17, f"● Всього світла не було: {total_without_h}год {total_without_m}хв",
                    fontsize=10, color='#666', va='top')
-            ax.text(1, stats_y - 0.30, f"● В середньому світло було {avg_with_h}год {avg_with_m}хв за добу",
+            ax.text(1, stats_y - 0.34, f"● В середньому світло було {avg_with_h}год {avg_with_m}хв за добу",
                    fontsize=10, color='#666', va='top')
         
         plt.tight_layout()
@@ -453,7 +452,8 @@ class PowerScheduleBot:
     
     def run(self):
         now = self.get_kyiv_time()
-        logger.info(f"Запуск бота зі СвітлоБот графіком. Київський час: {now.strftime('%H:%M')}")
+        logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
+        logger.info("Графік: 00:00-06:30 світло, 06:30-09:30 відкл, 09:30-00:00 світло")
         
         application = Application.builder().token(self.bot_token).build()
         
