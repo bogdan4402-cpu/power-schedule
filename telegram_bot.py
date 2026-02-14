@@ -48,8 +48,8 @@ class PowerScheduleBot:
                     'hours_without_power': 3.0,  # Години без світла
                 },
                 "2026-02-15": {
-                    'hours_with_power': 0.0,     # 0 = графіки відсутні
-                    'hours_without_power': 0.0,  # 0 = графіки відсутні
+                    'hours_with_power': 19.0,     # 0 = графіки відсутні
+                    'hours_without_power': 5.0,  # 0 = графіки відсутні
                 }
             }
             self.save_stats(stats)
