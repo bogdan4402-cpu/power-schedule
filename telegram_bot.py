@@ -39,7 +39,7 @@ class PowerScheduleBot:
             "2026-02-15": [
                 (0, 0, True),
                 (13, 05, False),
-                (13, 12, True),
+                (13, 15, True),
             ],
         }
 
