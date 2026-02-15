@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот - ПОВНА РОБОЧА ВЕРСІЯ"""
+"""Telegram бот - АВТОМАТИЧНА СИНХРОНІЗАЦІЯ"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -24,9 +24,11 @@ class PowerScheduleBot:
         self.bot_token = bot_token
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
+        self.history_file = "power_history.json"
         
         # ========================================
-        # 📌 ГРАФІКИ ДЛЯ КОЖНОГО ДНЯ
+        # 📌 ТІЛЬКИ ЦЕ ТРЕБА МІНЯТИ! 
+        # Формат: (година, хвилина, є_світло)
         # ========================================
         self.schedules = {
             "2026-02-14": [
@@ -36,18 +38,103 @@ class PowerScheduleBot:
             ],
             "2026-02-15": [
                 (0, 0, True),      # Весь день світло
-                (23, 59, True),    # Без відключень
             ],
-            # Додавайте нові дні тут:
-            # "2026-02-16": [
+            "2026-02-16": [
+                (0, 0, True),
+                (8, 0, False),
+                (12, 0, True),
+                (18, 0, False),
+                (22, 0, True),
+            ],
+            # Додавайте нові дні тут ↓
+            # "2026-02-17": [
             #     (0, 0, True),
-            #     (8, 0, False),
-            #     (12, 0, True),
+            #     (10, 0, False),
+            #     (14, 0, True),
             # ],
         }
         
-        self.init_stats()
+        self.init_history()
         self.cleanup_old_days()
+        self.auto_sync_stats()  # АВТОМАТИЧНО рахує статистику!
+    
+    def init_history(self):
+        """Ініціалізує історію змін світла"""
+        if not os.path.exists(self.history_file):
+            # Створюємо початкову історію
+            history = {
+                "last_check": None,
+                "current_status": None,
+                "status_since": None
+            }
+            self.save_history(history)
+    
+    def load_history(self):
+        try:
+            with open(self.history_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {
+                "last_check": None,
+                "current_status": None,
+                "status_since": None
+            }
+    
+    def save_history(self, history):
+        try:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(history, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"Помилка збереження історії: {e}")
+    
+    def update_history(self):
+        """Оновлює історію при зміні статусу"""
+        now = self.get_kyiv_time()
+        current = self.get_current_status()
+        history = self.load_history()
+        
+        if current['status'] is None:
+            return
+        
+        # Якщо статус змінився
+        if history['current_status'] != current['status']:
+            history['current_status'] = current['status']
+            history['status_since'] = now.isoformat()
+            self.save_history(history)
+            logger.info(f"Статус змінився: {'Світло' if current['status'] else 'Відключення'} з {now}")
+    
+    def auto_sync_stats(self):
+        """АВТОМАТИЧНО рахує статистику з графіків"""
+        stats = {}
+        
+        for date_str, schedule in self.schedules.items():
+            hours_with = 0
+            hours_without = 0
+            
+            # Рахуємо години зі світлом
+            for i, (h, m, status) in enumerate(schedule):
+                start_min = h * 60 + m
+                
+                if i + 1 < len(schedule):
+                    next_h, next_m, _ = schedule[i + 1]
+                    end_min = next_h * 60 + next_m
+                else:
+                    end_min = 24 * 60
+                
+                duration = (end_min - start_min) / 60  # в годинах
+                
+                if status:
+                    hours_with += duration
+                else:
+                    hours_without += duration
+            
+            stats[date_str] = {
+                'hours_with_power': round(hours_with, 1),
+                'hours_without_power': round(hours_without, 1)
+            }
+        
+        self.save_stats(stats)
+        logger.info(f"Автоматично розраховано статистику для {len(stats)} днів")
     
     def cleanup_old_days(self):
         """Автоматично видаляє дні старше вчорашнього"""
@@ -62,36 +149,6 @@ class PowerScheduleBot:
         for date_str in to_remove:
             del self.schedules[date_str]
             logger.info(f"Видалено старий графік: {date_str}")
-        
-        stats = self.load_stats()
-        updated = False
-        
-        to_remove_stats = []
-        for date_str in stats.keys():
-            if date_str < yesterday:
-                to_remove_stats.append(date_str)
-        
-        for date_str in to_remove_stats:
-            del stats[date_str]
-            updated = True
-            logger.info(f"Видалено стару статистику: {date_str}")
-        
-        if updated:
-            self.save_stats(stats)
-    
-    def init_stats(self):
-        if not os.path.exists(self.stats_file):
-            stats = {
-                "2026-02-14": {
-                    'hours_with_power': 21.0,
-                    'hours_without_power': 3.0,
-                },
-                "2026-02-15": {
-                    'hours_with_power': 24.0,   # Весь день світло
-                    'hours_without_power': 0.0,  # Без відключень
-                }
-            }
-            self.save_stats(stats)
     
     def load_stats(self):
         try:
@@ -175,6 +232,55 @@ class PowerScheduleBot:
         
         return periods[0]
     
+    def get_real_power_on_time(self):
+        """Повертає РЕАЛЬНИЙ час коли ввімкнулося світло (з історії)"""
+        history = self.load_history()
+        now = self.get_kyiv_time()
+        
+        # Якщо є збережений час в історії
+        if history.get('status_since') and history.get('current_status') == True:
+            try:
+                status_since = datetime.fromisoformat(history['status_since'])
+                return status_since
+            except:
+                pass
+        
+        # Інакше шукаємо в графіку коли мало ввімкнутися
+        current = self.get_current_status()
+        
+        if current['status']:
+            # Світло є - шукаємо коли ввімкнулося
+            today_str = now.strftime('%Y-%m-%d')
+            schedule = self.get_schedule_for_date(today_str)
+            
+            if not schedule:
+                return now
+            
+            current_minutes = now.hour * 60 + now.minute
+            
+            # Шукаємо останню зміну на True
+            last_power_on = None
+            for h, m, status in schedule:
+                period_min = h * 60 + m
+                if status and period_min <= current_minutes:
+                    last_power_on = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            
+            if last_power_on:
+                return last_power_on
+            
+            # Якщо не знайшли сьогодні - може вчора ввімкнулося
+            yesterday = now - timedelta(days=1)
+            yesterday_str = yesterday.strftime('%Y-%m-%d')
+            schedule_yesterday = self.get_schedule_for_date(yesterday_str)
+            
+            if schedule_yesterday:
+                # Шукаємо останній період зі світлом вчора
+                for h, m, status in reversed(schedule_yesterday):
+                    if status:
+                        return yesterday.replace(hour=h, minute=m, second=0, microsecond=0)
+        
+        return current['period_start_datetime'] if current['period_start_datetime'] else now
+    
     def get_next_period(self):
         """Отримує наступний період після поточного"""
         now = self.get_kyiv_time()
@@ -211,17 +317,19 @@ class PowerScheduleBot:
         return None
     
     def format_timer_message(self):
-        """Таймер світла"""
+        """Таймер з РЕАЛЬНИМ часом ввімкнення"""
         now = self.get_kyiv_time()
         current = self.get_current_status()
+        
+        # Оновлюємо історію
+        self.update_history()
         
         if current['status'] is None:
             return "❌ Графік відсутній"
         
-        period_start = current['period_start_datetime']
         period_end = current['period_end_datetime']
         
-        if period_end <= period_start:
+        if period_end <= current['period_start_datetime']:
             period_end = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         
         if period_end < now:
@@ -232,11 +340,17 @@ class PowerScheduleBot:
                 microsecond=0
             )
         
-        elapsed = now - period_start
+        # РЕАЛЬНИЙ час початку
+        if current['status']:
+            real_start = self.get_real_power_on_time()
+        else:
+            real_start = current['period_start_datetime']
+        
+        elapsed = now - real_start
         
         if elapsed.total_seconds() < 0:
-            period_start = period_start - timedelta(days=1)
-            elapsed = now - period_start
+            real_start = real_start - timedelta(days=1)
+            elapsed = now - real_start
         
         elapsed_hours = int(elapsed.total_seconds() // 3600)
         elapsed_minutes = int((elapsed.total_seconds() % 3600) // 60)
@@ -261,7 +375,9 @@ class PowerScheduleBot:
             msg += f"<b>⏱️ {status}</b>\n\n"
             msg += f"🕐 Зараз: {now.strftime('%H:%M:%S')}\n\n"
             msg += f"✅ Світло є вже:\n"
-            msg += f"<b>{elapsed_hours} год {elapsed_minutes} хв {elapsed_seconds} сек</b>\n\n"
+            msg += f"<b>{elapsed_hours} год {elapsed_minutes} хв {elapsed_seconds} сек</b>\n"
+            msg += f"<i>(з {real_start.strftime('%d.%m %H:%M')})</i>\n\n"
+            
             msg += f"⏳ Залишилось до відключення:\n"
             msg += f"<b>{remaining_hours} год {remaining_minutes} хв {remaining_seconds} сек</b>\n\n"
             
@@ -277,7 +393,9 @@ class PowerScheduleBot:
             msg += f"<b>⏱️ {status}</b>\n\n"
             msg += f"🕐 Зараз: {now.strftime('%H:%M:%S')}\n\n"
             msg += f"❌ Світла немає вже:\n"
-            msg += f"<b>{elapsed_hours} год {elapsed_minutes} хв {elapsed_seconds} сек</b>\n\n"
+            msg += f"<b>{elapsed_hours} год {elapsed_minutes} хв {elapsed_seconds} сек</b>\n"
+            msg += f"<i>(з {real_start.strftime('%d.%m %H:%M')})</i>\n\n"
+            
             msg += f"⏳ Залишилось до ввімкнення:\n"
             msg += f"<b>{remaining_hours} год {remaining_minutes} хв {remaining_seconds} сек</b>\n\n"
             
@@ -730,6 +848,7 @@ class PowerScheduleBot:
     def run(self):
         now = self.get_kyiv_time()
         logger.info(f"Запуск бота. Київський час: {now.strftime('%H:%M')}")
+        logger.info(f"Завантажено графіків: {len(self.schedules)}")
         
         application = Application.builder().token(self.bot_token).build()
         
