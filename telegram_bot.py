@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот - АВТОМАТИЧНІ СПОВІЩЕННЯ + ВИПРАВЛЕНИЙ ТАЙМЕР"""
+"""Telegram бот - АВТОСПОВІЩЕННЯ В ГРУПУ"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -26,11 +26,10 @@ class PowerScheduleBot:
         self.base_url = "https://off.energy.mk.ua/"
         self.stats_file = "weekly_stats.json"
         self.history_file = "power_history.json"
-        self.subscribers_file = "subscribers.json"
+        self.group_chat_file = "group_chat.json"
         
         # ========================================
         # 📌 ТІЛЬКИ ЦЕ ТРЕБА МІНЯТИ! 
-        # Формат: (година, хвилина, є_світло)
         # ========================================
         self.schedules = {
             "2026-02-14": [
@@ -39,19 +38,18 @@ class PowerScheduleBot:
                 (9, 30, True),
             ],
             "2026-02-15": [
-                (0, 0, True),      # Весь день світло
-                (12, 56,True),
-                (12, 56, False),
-                (13, 11, True),
+                (0, 0, True),
             ],
             "2026-02-16": [
                 (0, 0, True),
-                (0, 10, False),
+                (8, 0, False),
+                (12, 0, True),
+                (18, 0, False),
+                (22, 0, True),
             ],
         }
         
         self.init_history()
-        self.init_subscribers()
         self.cleanup_old_days()
         
         # Перевіряємо чи змінився графік
@@ -64,36 +62,31 @@ class PowerScheduleBot:
         
         self.auto_sync_stats()
     
-    def init_subscribers(self):
-        """Ініціалізує список підписників"""
-        if not os.path.exists(self.subscribers_file):
-            self.save_subscribers([])
-    
-    def load_subscribers(self):
+    def load_group_chat_id(self):
+        """Завантажує ID групи"""
+        # Спочатку пробуємо з змінної оточення
+        group_id = os.getenv('GROUP_CHAT_ID')
+        if group_id:
+            return int(group_id)
+        
+        # Інакше з файлу
         try:
-            with open(self.subscribers_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(self.group_chat_file, 'r') as f:
+                data = json.load(f)
+                return data.get('group_chat_id')
         except:
-            return []
+            return None
     
-    def save_subscribers(self, subscribers):
+    def save_group_chat_id(self, chat_id):
+        """Зберігає ID групи"""
         try:
-            with open(self.subscribers_file, 'w', encoding='utf-8') as f:
-                json.dump(subscribers, f, ensure_ascii=False, indent=2)
+            with open(self.group_chat_file, 'w') as f:
+                json.dump({'group_chat_id': chat_id}, f)
+            logger.info(f"✅ Збережено ID групи: {chat_id}")
         except Exception as e:
-            logger.error(f"Помилка збереження підписників: {e}")
-    
-    def add_subscriber(self, chat_id):
-        """Додає підписника"""
-        subscribers = self.load_subscribers()
-        if chat_id not in subscribers:
-            subscribers.append(chat_id)
-            self.save_subscribers(subscribers)
-            return True
-        return False
+            logger.error(f"Помилка збереження ID групи: {e}")
     
     def load_old_schedules(self):
-        """Завантажує попередню версію графіків"""
         try:
             with open('old_schedules.json', 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -101,32 +94,29 @@ class PowerScheduleBot:
             return {}
     
     def save_old_schedules(self):
-        """Зберігає поточну версію графіків"""
         try:
             with open('old_schedules.json', 'w', encoding='utf-8') as f:
                 json.dump(self.schedules, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"Помилка збереження старих графіків: {e}")
+            logger.error(f"Помилка: {e}")
     
-    async def notify_schedule_change(self, application):
-        """Надсилає повідомлення всім підписникам про зміну графіка"""
-        subscribers = self.load_subscribers()
+    async def notify_group(self, application):
+        """Надсилає повідомлення в групу про зміну графіка"""
+        group_chat_id = self.load_group_chat_id()
         
-        if not subscribers:
-            logger.info("Немає підписників для сповіщення")
+        if not group_chat_id:
+            logger.warning("⚠️ ID групи не знайдено. Бот запише його при наступному повідомленні в групі.")
             return
         
         now = self.get_kyiv_time()
         
-        # Формуємо повідомлення
         msg = "🔔 <b>УВАГА! Графік відключень оновлено!</b>\n\n"
         msg += f"📅 Оновлено: {now.strftime('%d.%m.%Y %H:%M')}\n\n"
         
-        # Показуємо графіки на найближчі дні
         dates = sorted(self.schedules.keys())
         shown = 0
         for date_str in dates:
-            if shown >= 3:  # Показуємо максимум 3 дні
+            if shown >= 3:
                 break
             
             date_obj = datetime.strptime(date_str, '%Y-%m-%d')
@@ -155,29 +145,19 @@ class PowerScheduleBot:
                 msg += "\n"
                 shown += 1
         
-        msg += "⚡ Використайте /schedule для повного графіка"
+        msg += "⚡ Група 3.1"
         
-        # Надсилаємо всім підписникам
-        success = 0
-        failed = 0
-        
-        for chat_id in subscribers:
-            try:
-                await application.bot.send_message(
-                    chat_id=chat_id,
-                    text=msg,
-                    parse_mode='HTML'
-                )
-                success += 1
-                await asyncio.sleep(0.05)  # Невелика затримка
-            except Exception as e:
-                logger.error(f"Помилка відправки повідомлення {chat_id}: {e}")
-                failed += 1
-        
-        logger.info(f"Сповіщення надіслано: {success} успішно, {failed} помилок")
+        try:
+            await application.bot.send_message(
+                chat_id=group_chat_id,
+                text=msg,
+                parse_mode='HTML'
+            )
+            logger.info(f"✅ Сповіщення надіслано в групу {group_chat_id}")
+        except Exception as e:
+            logger.error(f"❌ Помилка відправки в групу: {e}")
     
     def init_history(self):
-        """Ініціалізує історію змін світла"""
         if not os.path.exists(self.history_file):
             history = {
                 "last_check": None,
@@ -202,10 +182,9 @@ class PowerScheduleBot:
             with open(self.history_file, 'w', encoding='utf-8') as f:
                 json.dump(history, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.error(f"Помилка збереження історії: {e}")
+            logger.error(f"Помилка: {e}")
     
     def update_history(self):
-        """Оновлює історію при зміні статусу"""
         now = self.get_kyiv_time()
         current = self.get_current_status()
         history = self.load_history()
@@ -213,15 +192,12 @@ class PowerScheduleBot:
         if current['status'] is None:
             return
         
-        # Якщо статус змінився
         if history['current_status'] != current['status']:
             history['current_status'] = current['status']
             history['status_since'] = now.isoformat()
             self.save_history(history)
-            logger.info(f"Статус змінився: {'Світло' if current['status'] else 'Відключення'} з {now}")
     
     def auto_sync_stats(self):
-        """АВТОМАТИЧНО рахує статистику з графіків"""
         stats = {}
         
         for date_str, schedule in self.schedules.items():
@@ -250,10 +226,9 @@ class PowerScheduleBot:
             }
         
         self.save_stats(stats)
-        logger.info(f"✅ Автоматично розраховано статистику для {len(stats)} днів")
+        logger.info(f"✅ Статистика: {len(stats)} днів")
     
     def cleanup_old_days(self):
-        """Автоматично видаляє дні старше вчорашнього"""
         now = self.get_kyiv_time()
         yesterday = (now - timedelta(days=1)).strftime('%Y-%m-%d')
         
@@ -264,7 +239,6 @@ class PowerScheduleBot:
         
         for date_str in to_remove:
             del self.schedules[date_str]
-            logger.info(f"🗑️ Видалено старий графік: {date_str}")
     
     def load_stats(self):
         try:
@@ -349,7 +323,6 @@ class PowerScheduleBot:
         return periods[0]
     
     def get_real_power_on_time(self):
-        """Повертає РЕАЛЬНИЙ час коли ввімкнулося/вимкнулося світло"""
         history = self.load_history()
         now = self.get_kyiv_time()
         current = self.get_current_status()
@@ -357,17 +330,14 @@ class PowerScheduleBot:
         if current['status'] is None:
             return now
         
-        # Якщо є збережений час в історії і статус співпадає
         if history.get('status_since') and history.get('current_status') == current['status']:
             try:
                 status_since = datetime.fromisoformat(history['status_since'])
-                # Перевіряємо що це не застарілі дані
                 if now - status_since < timedelta(days=2):
                     return status_since
             except:
                 pass
         
-        # Інакше шукаємо в графіку
         today_str = now.strftime('%Y-%m-%d')
         schedule = self.get_schedule_for_date(today_str)
         
@@ -376,7 +346,6 @@ class PowerScheduleBot:
         
         current_minutes = now.hour * 60 + now.minute
         
-        # Шукаємо останню зміну на поточний статус
         last_change = None
         for h, m, status in schedule:
             period_min = h * 60 + m
@@ -384,13 +353,11 @@ class PowerScheduleBot:
                 last_change = now.replace(hour=h, minute=m, second=0, microsecond=0)
         
         if last_change:
-            # Зберігаємо в історію
             history['current_status'] = current['status']
             history['status_since'] = last_change.isoformat()
             self.save_history(history)
             return last_change
         
-        # Якщо не знайшли сьогодні - може вчора
         yesterday = now - timedelta(days=1)
         yesterday_str = yesterday.strftime('%Y-%m-%d')
         schedule_yesterday = self.get_schedule_for_date(yesterday_str)
@@ -407,7 +374,6 @@ class PowerScheduleBot:
         return current['period_start_datetime'] if current['period_start_datetime'] else now
     
     def get_next_period(self):
-        """Отримує наступний період після поточного"""
         now = self.get_kyiv_time()
         today_str = now.strftime('%Y-%m-%d')
         schedule = self.get_schedule_for_date(today_str)
@@ -442,7 +408,6 @@ class PowerScheduleBot:
         return None
     
     def format_timer_message(self):
-        """ВИПРАВЛЕНИЙ Таймер з РЕАЛЬНИМ часом"""
         now = self.get_kyiv_time()
         current = self.get_current_status()
         
@@ -882,15 +847,10 @@ class PowerScheduleBot:
         return msg
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # Автоматично підписуємо користувача
-        chat_id = update.effective_chat.id
-        self.add_subscriber(chat_id)
-        
         welcome_text = (
             "👋 <b>Вітаю!</b>\n\n"
             "Я показую графік відключень для Миколаївської області.\n\n"
             "📍 Група: <b>3.1</b>\n\n"
-            "🔔 Ви автоматично підписані на сповіщення про зміни графіка!\n\n"
             "Використовуйте меню внизу 👇"
         )
         
@@ -901,11 +861,16 @@ class PowerScheduleBot:
         )
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        text = update.message.text
+        # Зберігаємо ID групи якщо повідомлення з групи
+        if update.effective_chat.type in ['group', 'supergroup']:
+            chat_id = update.effective_chat.id
+            saved_id = self.load_group_chat_id()
+            if saved_id != chat_id:
+                self.save_group_chat_id(chat_id)
+                logger.info(f"💾 Збережено новий ID групи: {chat_id}")
+            return  # Не відповідаємо в групі на всі повідомлення
         
-        # Автоматично підписуємо при першому повідомленні
-        chat_id = update.effective_chat.id
-        self.add_subscriber(chat_id)
+        text = update.message.text
         
         if text == "⚡ Зараз є світло?":
             message = self.format_now_message()
@@ -972,14 +937,14 @@ class PowerScheduleBot:
         await update.message.reply_text(message, parse_mode='HTML', reply_markup=self.get_main_keyboard())
     
     async def post_init(self, application: Application):
-        """Викликається після запуску бота"""
+        """Викликається після запуску"""
         if self.schedule_changed:
-            logger.info("🔔 Графік змінився! Надсилаємо сповіщення...")
-            await self.notify_schedule_change(application)
+            logger.info("🔔 Графік змінився! Надсилаємо в групу...")
+            await self.notify_group(application)
     
     def run(self):
         now = self.get_kyiv_time()
-        logger.info(f"🚀 Запуск бота. Київський час: {now.strftime('%H:%M')}")
+        logger.info(f"🚀 Запуск бота: {now.strftime('%H:%M')}")
         logger.info(f"📅 Завантажено графіків: {len(self.schedules)}")
         
         application = Application.builder().token(self.bot_token).build()
@@ -991,7 +956,6 @@ class PowerScheduleBot:
         application.add_handler(CommandHandler("timer", self.timer_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
-        # Викликаємо post_init після запуску
         application.post_init = self.post_init
         
         logger.info("✅ Бот запущено!")
