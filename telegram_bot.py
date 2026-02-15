@@ -47,7 +47,6 @@ class PowerScheduleBot:
             #     (10, 0, False),
             #     (14, 0, True),
             # ],
-        }
         
         self.init_history()
         self.cleanup_old_days()
