@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Telegram бот - АВТОСПОВІЩЕННЯ В ГРУПУ"""
+"""Telegram бот - ТЕСТ + АВТОСПОВІЩЕННЯ"""
 
 import logging
 from datetime import datetime, timezone, timedelta
@@ -39,9 +39,6 @@ class PowerScheduleBot:
             ],
             "2026-02-15": [
                 (0, 0, True),
-                (12, 56 True),
-                (12, 56 False),
-                (13, 11 True),
             ],
             "2026-02-16": [
                 (0, 0, True),
@@ -59,35 +56,37 @@ class PowerScheduleBot:
         old_schedules = self.load_old_schedules()
         if old_schedules != self.schedules:
             self.schedule_changed = True
+            logger.info("✅ ГРАФІК ЗМІНИВСЯ!")
             self.save_old_schedules()
         else:
             self.schedule_changed = False
+            logger.info("ℹ️ Графік не змінювався")
         
         self.auto_sync_stats()
     
     def load_group_chat_id(self):
         """Завантажує ID групи"""
-        # Спочатку пробуємо з змінної оточення
-        group_id = os.getenv('GROUP_CHAT_ID')
-        if group_id:
-            return int(group_id)
-        
-        # Інакше з файлу
+        # Спочатку з файлу
         try:
             with open(self.group_chat_file, 'r') as f:
                 data = json.load(f)
-                return data.get('group_chat_id')
-        except:
-            return None
+                chat_id = data.get('group_chat_id')
+                if chat_id:
+                    logger.info(f"📖 Завантажено ID групи з файлу: {chat_id}")
+                    return chat_id
+        except Exception as e:
+            logger.warning(f"⚠️ Не вдалося завантажити ID групи: {e}")
+        
+        return None
     
     def save_group_chat_id(self, chat_id):
         """Зберігає ID групи"""
         try:
             with open(self.group_chat_file, 'w') as f:
                 json.dump({'group_chat_id': chat_id}, f)
-            logger.info(f"✅ Збережено ID групи: {chat_id}")
+            logger.info(f"💾 ЗБЕРЕЖЕНО ID ГРУПИ: {chat_id}")
         except Exception as e:
-            logger.error(f"Помилка збереження ID групи: {e}")
+            logger.error(f"❌ Помилка збереження ID групи: {e}")
     
     def load_old_schedules(self):
         try:
@@ -104,12 +103,15 @@ class PowerScheduleBot:
             logger.error(f"Помилка: {e}")
     
     async def notify_group(self, application):
-        """Надсилає повідомлення в групу про зміну графіка"""
+        """Надсилає повідомлення в групу"""
         group_chat_id = self.load_group_chat_id()
         
         if not group_chat_id:
-            logger.warning("⚠️ ID групи не знайдено. Бот запише його при наступному повідомленні в групі.")
+            logger.warning("⚠️ ID ГРУПИ НЕ ЗНАЙДЕНО!")
+            logger.warning("💡 Напишіть щось в групі де є бот, щоб він запам'ятав ID")
             return
+        
+        logger.info(f"📤 Надсилаю повідомлення в групу {group_chat_id}...")
         
         now = self.get_kyiv_time()
         
@@ -156,9 +158,9 @@ class PowerScheduleBot:
                 text=msg,
                 parse_mode='HTML'
             )
-            logger.info(f"✅ Сповіщення надіслано в групу {group_chat_id}")
+            logger.info("✅ ПОВІДОМЛЕННЯ НАДІСЛАНО!")
         except Exception as e:
-            logger.error(f"❌ Помилка відправки в групу: {e}")
+            logger.error(f"❌ ПОМИЛКА ВІДПРАВКИ: {e}")
     
     def init_history(self):
         if not os.path.exists(self.history_file):
@@ -270,10 +272,7 @@ class PowerScheduleBot:
         return datetime.now(KYIV_TZ)
     
     def get_schedule_for_date(self, date_str):
-        if date_str in self.schedules:
-            return self.schedules[date_str]
-        else:
-            return None
+        return self.schedules.get(date_str)
     
     def get_current_status(self):
         now = self.get_kyiv_time()
@@ -850,6 +849,22 @@ class PowerScheduleBot:
         return msg
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # ЛОГУЄМО ВСЕ
+        chat_type = update.effective_chat.type
+        chat_id = update.effective_chat.id
+        chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else "Приватний чат"
+        
+        logger.info(f"📥 /start від: {chat_type} | ID: {chat_id} | Назва: {chat_title}")
+        
+        # Якщо група - зберігаємо ID
+        if chat_type in ['group', 'supergroup']:
+            self.save_group_chat_id(chat_id)
+            await update.message.reply_text(
+                f"✅ ID групи збережено: {chat_id}\n\n"
+                "Тепер я буду надсилати сюди сповіщення про зміни графіка!"
+            )
+            return
+        
         welcome_text = (
             "👋 <b>Вітаю!</b>\n\n"
             "Я показую графік відключень для Миколаївської області.\n\n"
@@ -864,14 +879,17 @@ class PowerScheduleBot:
         )
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        # Зберігаємо ID групи якщо повідомлення з групи
-        if update.effective_chat.type in ['group', 'supergroup']:
-            chat_id = update.effective_chat.id
+        # Зберігаємо ID групи
+        chat_type = update.effective_chat.type
+        chat_id = update.effective_chat.id
+        
+        logger.info(f"📩 Повідомлення від: {chat_type} | ID: {chat_id}")
+        
+        if chat_type in ['group', 'supergroup']:
             saved_id = self.load_group_chat_id()
             if saved_id != chat_id:
                 self.save_group_chat_id(chat_id)
-                logger.info(f"💾 Збережено новий ID групи: {chat_id}")
-            return  # Не відповідаємо в групі на всі повідомлення
+            return  # Не відповідаємо в групі
         
         text = update.message.text
         
@@ -941,14 +959,21 @@ class PowerScheduleBot:
     
     async def post_init(self, application: Application):
         """Викликається після запуску"""
+        logger.info("🔄 post_init викликано")
+        
         if self.schedule_changed:
-            logger.info("🔔 Графік змінився! Надсилаємо в групу...")
+            logger.info("🔔 Графік змінився! Спроба надіслати...")
             await self.notify_group(application)
+        else:
+            logger.info("ℹ️ Графік не змінювався, сповіщення не потрібне")
     
     def run(self):
         now = self.get_kyiv_time()
-        logger.info(f"🚀 Запуск бота: {now.strftime('%H:%M')}")
+        logger.info("=" * 50)
+        logger.info(f"🚀 ЗАПУСК БОТА: {now.strftime('%d.%m.%Y %H:%M')}")
         logger.info(f"📅 Завантажено графіків: {len(self.schedules)}")
+        logger.info(f"🔄 Графік змінився: {self.schedule_changed}")
+        logger.info("=" * 50)
         
         application = Application.builder().token(self.bot_token).build()
         
@@ -961,7 +986,7 @@ class PowerScheduleBot:
         
         application.post_init = self.post_init
         
-        logger.info("✅ Бот запущено!")
+        logger.info("✅ Бот запущено і чекає на повідомлення...")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
